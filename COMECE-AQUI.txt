@@ -1,0 +1,33 @@
+NUCEL — COMEÇAR AQUI
+====================
+
+O projeto agora está preparado para o fluxo definitivo:
+
+GITHUB -> VERCEL -> SUPABASE
+
+1) SUPABASE
+- Use um projeto dedicado ao NuCel.
+- Rode o SQL: supabase/migrations/001_nucel_initial.sql
+- Copie .env.example para .env.local no desenvolvimento.
+- No deploy, cadastre SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY,
+  SUPABASE_SECRET_KEY e NUCEL_OWNER_EMAIL.
+
+2) GITHUB
+- Mantenha este projeto em um repositório privado.
+- A branch principal será a fonte oficial do NuCel.
+
+3) VERCEL
+- Importe o repositório GitHub.
+- Configure as mesmas variáveis de ambiente.
+- Cada push na principal deve gerar um novo deploy automaticamente.
+
+4) PRIMEIRO ACESSO
+- Crie a conta usando exatamente o e-mail configurado em NUCEL_OWNER_EMAIL.
+- Esse usuário se torna o administrador.
+- Cadastre os colaboradores e os aparelhos pelo painel.
+
+5) CONECTOR
+- Use public/nucel-conector.zip no computador que hospeda os celulares.
+- O allowed_origin deve ser a URL HTTPS final do painel NuCel.
+
+Depois dessa configuração, não é mais necessário ficar baixando ZIP para atualizar o sistema.

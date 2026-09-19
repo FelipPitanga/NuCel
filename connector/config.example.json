@@ -1,0 +1,5 @@
+{
+  "adb_path": "adb",
+  "secret": "COLE_A_CHAVE_GERADA_NO_NUCEL",
+  "allowed_origin": "COLE_O_ENDERECO_HTTPS_DO_PAINEL_SEM_BARRA_FINAL"
+}

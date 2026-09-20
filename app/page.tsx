@@ -97,11 +97,48 @@ function Devices({data,status,active,setActive,admin,add}:{data:Data;status:Reco
   return <section><div className="metrics"><Metric icon={<Smartphone/>} n={data.devices.length} t="Aparelhos"/><Metric icon={<Wifi/>} n={online} t="Online"/><Metric icon={<WifiOff/>} n={data.devices.length-online} t="Sem conexão"/><Metric icon={<Monitor/>} n={active.length} t="Telas abertas"/></div><Head title={admin?'Todos os celulares':'Meus celulares'} text={admin?'Organize os aparelhos da operação.':'Aparelhos liberados para sua conta.'} action={admin?'Adicionar celular':undefined} click={add}/><div className="device-grid">{data.devices.map(d=><article className="device" key={d.id}><div className="device-top"><span className={'dot '+(status[d.id]==='device'?'on':'')}/><small>{status[d.id]==='device'?'Online':status[d.id]==='unauthorized'?'Autorizar no aparelho':'Sem conexão'}</small></div><Smartphone className="phone-icon"/><b>{d.name}</b><span>{d.model}</span><button disabled={status[d.id]!=='device'} onClick={()=>setActive(x=>x.includes(d.id)?x:[...x,d.id])}>{active.includes(d.id)?<><Check/>Aberto</>:<><Play/>Iniciar</>}</button></article>)}</div>{!data.devices.length&&<div className="empty">Nenhum celular cadastrado ainda.{admin&&<button onClick={add}>Conectar primeiro aparelho</button>}</div>}<div className="workspace"><div className="workspace-title"><Monitor/>Área de trabalho <small>{active.length} telas abertas</small></div>{active.length?<div className="screens">{active.map(id=>{const d=data.devices.find(x=>x.id===id),c=data.connections.find(x=>x.id===d?.bridge_id);return d&&c?<Phone key={id} d={d} c={c} close={()=>setActive(x=>x.filter(v=>v!==id))}/>:null})}</div>:<div className="workspace-empty"><Monitor size={42}/><b>Inicie um celular para controlar por aqui.</b><span>Abra vários e trabalhe com todos lado a lado.</span></div>}</div></section>
 }
 function Phone({d,c,close}:{d:Device;c:Connection;close:()=>void}){
-  const [src,setSrc]=useState(''),[err,setErr]=useState(false),[gen,setGen]=useState(0);const conn=useRef(c);conn.current=c;const down=useRef<{x:number;y:number;t:number}|null>(null);
-  useEffect(()=>{let stop=false,url='',timer:ReturnType<typeof setTimeout>;const loop=async()=>{try{const b=await (await bridge(conn.current,'/frame?serial='+encodeURIComponent(d.serial))).blob();if(stop)return;const u=URL.createObjectURL(b);if(url)URL.revokeObjectURL(url);url=u;setSrc(u);setErr(false)}catch{setErr(true)}finally{if(!stop)timer=setTimeout(loop,900)}};loop();return()=>{stop=true;clearTimeout(timer);if(url)URL.revokeObjectURL(url)}},[d.serial,gen]);
-  const act=async(body:Record<string,unknown>)=>{try{await bridge(conn.current,'/action',{serial:d.serial,...body})}catch(e){toast.error((e as Error).message)}};
-  const point=(e:React.PointerEvent<HTMLImageElement>)=>{const r=e.currentTarget.getBoundingClientRect();return{x:Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),y:Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))}};
-  return <article className="screen"><header><span className={'dot '+(!err&&src?'on':'')}/><b>{d.name}</b><button onClick={close}><X/></button></header><div className="display">{src&&!err?<img src={src} alt={'Tela de '+d.name} draggable={false} onPointerDown={e=>{e.currentTarget.setPointerCapture(e.pointerId);down.current={...point(e),t:Date.now()}}} onPointerUp={e=>{if(!down.current)return;const a=down.current,b=point(e);down.current=null;act(Math.hypot(a.x-b.x,a.y-b.y)<.02?{type:'tap',x:b.x,y:b.y}:{type:'swipe',x:a.x,y:a.y,x2:b.x,y2:b.y,duration:300})}}/>:<div><Loader2 className="spin"/><span>{err?'Conexão interrompida':'Conectando…'}</span></div>}</div><nav><button onClick={()=>act({type:'key',key:'back'})}><ChevronLeft/></button><button onClick={()=>act({type:'key',key:'home'})}><Circle/></button><button onClick={()=>act({type:'key',key:'recent'})}><Square/></button></nav><footer><button onClick={()=>setGen(x=>x+1)}><RotateCw/>Reiniciar</button><button onClick={close}><Power/>Desligar</button></footer></article>
+  const [src,setSrc]=useState(''),[err,setErr]=useState(false),[gen,setGen]=useState(0);
+  const conn=useRef(c);conn.current=c;
+  const down=useRef<{x:number;y:number;t:number}|null>(null);
+
+  useEffect(()=>{
+    let stop=false,url='',seq=0,retry:ReturnType<typeof setTimeout>|undefined;
+    const loop=async()=>{
+      while(!stop){
+        try{
+          const r=await bridge(conn.current,'/frame?serial='+encodeURIComponent(d.serial)+'&after='+seq);
+          if(stop)return;
+          if(r.status===204)continue;
+          const next=Number(r.headers.get('X-NuCel-Frame')||0);
+          const b=await r.blob();
+          if(stop)return;
+          if(!b.size)continue;
+          const u=URL.createObjectURL(b);
+          if(url)URL.revokeObjectURL(url);
+          url=u;
+          if(Number.isFinite(next)&&next>0)seq=next;
+          else seq++;
+          setSrc(u);
+          setErr(false);
+        }catch{
+          if(stop)return;
+          setErr(true);
+          await new Promise<void>(resolve=>{retry=setTimeout(resolve,500)});
+        }
+      }
+    };
+    loop();
+    return()=>{stop=true;if(retry)clearTimeout(retry);if(url)URL.revokeObjectURL(url)};
+  },[d.serial,gen]);
+
+  const act=(body:Record<string,unknown>)=>{
+    bridge(conn.current,'/action',{serial:d.serial,...body}).catch(e=>toast.error((e as Error).message));
+  };
+  const point=(e:React.PointerEvent<HTMLImageElement>)=>{
+    const r=e.currentTarget.getBoundingClientRect();
+    return{x:Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),y:Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))};
+  };
+  return <article className="screen"><header><span className={'dot '+(!err&&src?'on':'')}/><b>{d.name}</b><button onClick={close}><X/></button></header><div className="display">{src?<img className={err?'stale':''} src={src} alt={'Tela de '+d.name} draggable={false} onPointerDown={e=>{e.currentTarget.setPointerCapture(e.pointerId);down.current={...point(e),t:Date.now()}}} onPointerUp={e=>{if(!down.current)return;const a=down.current,b=point(e);down.current=null;act(Math.hypot(a.x-b.x,a.y-b.y)<.02?{type:'tap',x:b.x,y:b.y}:{type:'swipe',x:a.x,y:a.y,x2:b.x,y2:b.y,duration:240})}}/>:<div><Loader2 className="spin"/><span>Conectando…</span></div>}{err&&src&&<span className="screen-warning">Reconectando…</span>}</div><nav><button onClick={()=>act({type:'key',key:'back'})}><ChevronLeft/></button><button onClick={()=>act({type:'key',key:'home'})}><Circle/></button><button onClick={()=>act({type:'key',key:'recent'})}><Square/></button></nav><footer><button onClick={()=>setGen(x=>x+1)}><RotateCw/>Reiniciar</button><button onClick={close}><Power/>Desligar</button></footer></article>
 }
 function Auth({message,done}:{message:string;done:()=>void}){const[mode,setMode]=useState<'login'|'register'>('login'),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);const submit=async(e:React.FormEvent<HTMLFormElement>)=>{e.preventDefault();setBusy(true);try{const r=await fetch('/api/auth/'+mode,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});const d=await r.json();if(!r.ok)throw new Error(d.error);if(d.needsConfirmation){setNotice('Conta criada. Confirme seu e-mail e depois entre.');setMode('login')}else await done()}catch(e){setNotice((e as Error).message)}finally{setBusy(false)}};return <section className="auth"><ShieldCheck size={30}/><h2>Entre no NuCel</h2><p>{message}</p><div className="auth-tabs"><button className={mode==='login'?'active':''} onClick={()=>setMode('login')}>Entrar</button><button className={mode==='register'?'active':''} onClick={()=>setMode('register')}>Criar conta</button></div><form onSubmit={submit}>{mode==='register'&&<Field name="name" label="Nome" placeholder="Seu nome"/>}<Field name="email" label="E-mail" type="email" placeholder="voce@empresa.com"/><Field name="password" label="Senha" type="password" placeholder="Sua senha"/>{notice&&<div className="notice">{notice}</div>}<button className="primary" disabled={busy}>{busy?'Aguarde…':mode==='login'?'Entrar':'Criar conta'}</button></form></section>}
 function Field({name,label,placeholder,type='text'}:{name:string;label:string;placeholder:string;type?:string}){return <label>{label}<input name={name} type={type} placeholder={placeholder} required minLength={type==='password'?8:undefined}/></label>}

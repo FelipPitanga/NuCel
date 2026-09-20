@@ -2,7 +2,8 @@
   "adb_path": "adb",
   "secret": "COLE_A_CHAVE_GERADA_NO_NUCEL",
   "allowed_origin": "COLE_O_ENDERECO_HTTPS_DO_PAINEL_SEM_BARRA_FINAL",
-  "target_fps": 5,
+  "target_fps": 10,
   "frame_width": 420,
-  "jpeg_quality": 55
+  "jpeg_quality": 55,
+  "video_bitrate": 3000000
 }

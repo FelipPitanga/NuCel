@@ -126,12 +126,14 @@ function Phone({d,c,close}:{d:Device;c:Connection;close:()=>void}){
     };
     const readU32=(a:Uint8Array,o:number)=>((a[o]*0x1000000)+(a[o+1]<<16)+(a[o+2]<<8)+a[o+3])>>>0;
     const readU64=(a:Uint8Array,o:number)=>{
-      let v=0n;for(let i=0;i<8;i++)v=(v<<8n)|BigInt(a[o+i]);return Number(v);
+      let v=0;
+      for(let i=0;i<8;i++)v=v*256+a[o+i];
+      return v;
     };
 
     const makeDecoder=async(codec:string)=>{
       decoder?.close();
-      decoder=new VideoDecoder({
+      const nextDecoder=new VideoDecoder({
         output:(frame)=>{
           const canvas=canvasRef.current;
           if(canvas){
@@ -147,9 +149,10 @@ function Phone({d,c,close}:{d:Device;c:Connection;close:()=>void}){
       });
       const cfg:VideoDecoderConfig={codec,optimizeForLatency:true,hardwareAcceleration:'prefer-hardware'};
       const support=await VideoDecoder.isConfigSupported(cfg);
-      if(!support.supported)throw new Error('H.264 não suportado pelo navegador.');
-      decoder.configure(cfg);
+      if(!support.supported){nextDecoder.close();throw new Error('H.264 não suportado pelo navegador.');}
+      nextDecoder.configure(cfg);
       configured=true;
+      return nextDecoder;
     };
 
     const run=async()=>{
@@ -179,13 +182,14 @@ function Phone({d,c,close}:{d:Device;c:Connection;close:()=>void}){
               if(kind===1)continue;
               if(kind===2){
                 configBytes=payload;
-                await makeDecoder(codecFromSps(payload));
+                decoder=await makeDecoder(codecFromSps(payload));
                 continue;
               }
-              if((kind===3||kind===4)&&decoder&&configured){
-                if(decoder.decodeQueueSize>4&&kind===4)continue;
+              const activeDecoder=decoder;
+              if((kind===3||kind===4)&&activeDecoder&&configured){
+                if(activeDecoder.decodeQueueSize>4&&kind===4)continue;
                 const data=kind===3&&configBytes?concat(configBytes,payload):payload;
-                decoder.decode(new EncodedVideoChunk({
+                activeDecoder.decode(new EncodedVideoChunk({
                   type:kind===3?'key':'delta',
                   timestamp:Number.isFinite(pts)?pts:performance.now()*1000,
                   data,

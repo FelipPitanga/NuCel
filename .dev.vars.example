@@ -1,0 +1,5 @@
+NEXTJS_ENV=development
+SUPABASE_URL=https://SEU-PROJETO.supabase.co
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_COLE_AQUI
+SUPABASE_SECRET_KEY=sb_secret_COLE_AQUI
+NUCEL_OWNER_EMAIL=seu-email@exemplo.com

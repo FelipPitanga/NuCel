@@ -1,6 +1,6 @@
 # NuCel — conector para Windows
 
-Este conector transmite capturas atualizadas do Android e recebe toques, arrastes e os comandos Voltar, Início e Recentes. Não abre janelas do scrcpy. É uma primeira implementação para validar com seus aparelhos: não é streaming de vídeo a 30/60 fps. Não transmite áudio e não oferece colar texto, transferência de arquivos ou troca de perfil Android nesta versão.
+Este conector mantém uma captura contínua em segundo plano enquanto a tela estiver aberta no NuCel e recebe toques, arrastes e os comandos Voltar, Início e Recentes. Quadros repetidos não são reenviados e os comandos de toque não esperam a próxima captura. Não abre janelas do scrcpy. Esta versão prioriza baixa latência com capturas ADB; ainda não é um stream H.264 de 30/60 fps. Não transmite áudio e não oferece colar texto, transferência de arquivos ou troca de perfil Android nesta versão.
 
 ## Preparar
 
@@ -45,3 +45,22 @@ O conector escuta somente em 127.0.0.1. Todo pedido de tela ou comando exige ass
 ## Validação realizada
 
 Código compilado e testes de autenticação, escopo, entrada e captura com ADB simulado. O funcionamento físico, a latência, a orientação da tela e o túnel devem ser validados no computador com os aparelhos reais antes de colocar a equipe para operar.
+
+
+## Desempenho
+
+Os valores abaixo são opcionais no `config.json`:
+
+```json
+{
+  "target_fps": 5,
+  "frame_width": 420,
+  "jpeg_quality": 55
+}
+```
+
+- `target_fps`: alvo de 1 a 8 capturas por segundo. O limite real depende do aparelho e do ADB.
+- `frame_width`: largura enviada ao navegador. 360–480 costuma ser suficiente para a área de trabalho do NuCel.
+- `jpeg_quality`: qualidade JPEG de 35 a 80.
+
+Para vários aparelhos abertos ao mesmo tempo, comece em 4–5 FPS. A captura para automaticamente alguns segundos depois de fechar a tela no painel.

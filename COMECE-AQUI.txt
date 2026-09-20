@@ -1,33 +1,45 @@
 NUCEL — COMEÇAR AQUI
 ====================
 
-O projeto agora está preparado para o fluxo definitivo:
+FLUXO OFICIAL
 
-GITHUB -> VERCEL -> SUPABASE
+GITHUB -> CLOUDFLARE WORKERS -> SUPABASE
+                     |
+                     -> NUCEL AGENT -> ADB -> CELULARES
 
 1) SUPABASE
-- Use um projeto dedicado ao NuCel.
-- Rode o SQL: supabase/migrations/001_nucel_initial.sql
-- Copie .env.example para .env.local no desenvolvimento.
-- No deploy, cadastre SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY,
-  SUPABASE_SECRET_KEY e NUCEL_OWNER_EMAIL.
+- O projeto NuCel já possui a estrutura de banco.
+- No Cloudflare, cadastre:
+  SUPABASE_URL
+  SUPABASE_PUBLISHABLE_KEY
+  SUPABASE_SECRET_KEY (como Secret)
+  NUCEL_OWNER_EMAIL
 
 2) GITHUB
-- Mantenha este projeto em um repositório privado.
-- A branch principal será a fonte oficial do NuCel.
+- FelipPitanga/NuCel é a fonte oficial do código.
+- Mantenha o repositório privado.
+- A branch de produção é main.
 
-3) VERCEL
-- Importe o repositório GitHub.
-- Configure as mesmas variáveis de ambiente.
-- Cada push na principal deve gerar um novo deploy automaticamente.
+3) CLOUDFLARE WORKERS
+- Workers & Pages -> Create application -> Import a repository.
+- Selecione FelipPitanga/NuCel.
+- Production branch: main.
+- Build command:
+  npx opennextjs-cloudflare build
+- Deploy command:
+  npx opennextjs-cloudflare deploy
+- Cadastre as quatro variáveis em Settings -> Variables & Secrets.
+- Cada push na main gera novo deploy automaticamente.
 
 4) PRIMEIRO ACESSO
-- Crie a conta usando exatamente o e-mail configurado em NUCEL_OWNER_EMAIL.
-- Esse usuário se torna o administrador.
-- Cadastre os colaboradores e os aparelhos pelo painel.
+- NUCEL_OWNER_EMAIL deve ser o e-mail do administrador principal.
+- Crie a primeira conta usando exatamente esse e-mail.
+- Depois cadastre colaboradores e escolha quais aparelhos cada um pode usar.
 
 5) CONECTOR
-- Use public/nucel-conector.zip no computador que hospeda os celulares.
-- O allowed_origin deve ser a URL HTTPS final do painel NuCel.
+- Os arquivos ficam em connector/.
+- Configure config.json com a chave gerada pelo NuCel.
+- allowed_origin deve ser exatamente a URL HTTPS final do Worker,
+  sem barra no final.
 
-Depois dessa configuração, não é mais necessário ficar baixando ZIP para atualizar o sistema.
+Depois dessa configuração não é mais necessário baixar ZIP para atualizar o NuCel.

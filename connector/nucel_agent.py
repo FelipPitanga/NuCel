@@ -185,6 +185,7 @@ class VideoSession:
                 )
                 self.process = process
                 last_emit = 0.0
+                container = None
 
                 try:
                     if not process.stdout:
@@ -211,10 +212,11 @@ class VideoSession:
                 except (FFmpegError, OSError, subprocess.SubprocessError, ValueError) as exc:
                     self.last_error = str(exc)
                 finally:
-                    try:
-                        container.close()
-                    except Exception:
-                        pass
+                    if container is not None:
+                        try:
+                            container.close()
+                        except Exception:
+                            pass
                     self.terminate_process()
 
                 # Android screenrecord can exit after a device-defined time limit.

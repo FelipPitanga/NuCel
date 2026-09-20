@@ -4,18 +4,19 @@ Painel web privado para visualizar e controlar vários celulares Android conecta
 
 ## Arquitetura
 
-- **Frontend + API:** Next.js 16, pronto para deploy na Vercel.
+- **Frontend + API:** Next.js 16 executando em Cloudflare Workers via OpenNext.
 - **Banco e autenticação:** Supabase (Postgres + Auth).
-- **Código:** GitHub como fonte oficial. O fluxo recomendado é GitHub → Vercel, com deploy automático a cada push na branch principal.
+- **Código:** GitHub como fonte oficial.
+- **CI/CD:** GitHub → Cloudflare Workers Builds. Pushes na branch `main` geram novos deploys.
 - **Aparelhos:** conector Python/ADB rodando no Windows da operação, exposto somente por um túnel HTTPS.
 
 O administrador cadastra computadores, aparelhos e colaboradores. Cada colaborador cria a própria conta NuCel com o e-mail previamente liberado e só recebe os aparelhos vinculados a ele.
 
 ## Configuração do Supabase
 
-Crie um projeto Supabase dedicado ao NuCel e aplique `supabase/migrations/001_nucel_initial.sql` e `002_nucel_grants_device_index.sql`.
+O projeto Supabase dedicado ao NuCel usa as migrations em `supabase/migrations/`.
 
-Depois configure no ambiente do deploy:
+Configure estas variáveis no Worker:
 
 ```env
 SUPABASE_URL=https://SEU-PROJETO.supabase.co
@@ -24,23 +25,41 @@ SUPABASE_SECRET_KEY=sb_secret_...
 NUCEL_OWNER_EMAIL=seu-email@exemplo.com
 ```
 
-`SUPABASE_SECRET_KEY` é somente de servidor e nunca deve usar prefixo `NEXT_PUBLIC_`.
+`SUPABASE_SECRET_KEY` deve ser criada como **Secret** no Cloudflare. Ela nunca deve ser colocada no GitHub.
 
 O primeiro usuário que criar uma conta usando `NUCEL_OWNER_EMAIL` vira administrador. Outros e-mails só conseguem criar conta depois de serem cadastrados na aba **Colaboradores**.
 
-## Deploy recomendado
+## Deploy no Cloudflare
 
-1. Repositório privado no GitHub.
-2. Importar o repositório na Vercel.
-3. Adicionar as quatro variáveis de ambiente acima.
-4. Fazer o primeiro deploy.
-5. Usar a URL de produção da Vercel no `allowed_origin` do conector NuCel.
+O NuCel usa **Cloudflare Workers**, não Pages estático, porque possui autenticação e rotas de API.
 
-Depois disso, alterações no GitHub são publicadas automaticamente pela Vercel.
+1. Mantenha o repositório privado no GitHub.
+2. No Cloudflare, abra **Workers & Pages → Create application → Import a repository**.
+3. Selecione `FelipPitanga/NuCel`.
+4. Use a branch de produção `main`.
+5. Build command: `npx opennextjs-cloudflare build`.
+6. Deploy command: `npx opennextjs-cloudflare deploy`.
+7. Em **Settings → Variables & Secrets**, cadastre:
+   - `SUPABASE_URL` — variável;
+   - `SUPABASE_PUBLISHABLE_KEY` — variável;
+   - `SUPABASE_SECRET_KEY` — **secret**;
+   - `NUCEL_OWNER_EMAIL` — variável.
+8. Faça o primeiro deploy e use a URL `https://nucel.<seu-subdominio>.workers.dev` ou um domínio próprio.
+9. Coloque essa URL final no `allowed_origin` do conector NuCel.
+
+Depois disso, cada push na `main` dispara automaticamente um novo build/deploy no Cloudflare.
+
+## Arquivos Cloudflare
+
+- `wrangler.jsonc` — configuração do Worker.
+- `open-next.config.ts` — adaptação Next.js → Cloudflare Workers.
+- `.dev.vars.example` — exemplo de variáveis para preview local.
+- `npm run preview` — build e preview no runtime local do Cloudflare.
+- `npm run deploy` — build e deploy manual pelo Wrangler/OpenNext.
 
 ## Conector Windows
 
-O pacote para o computador fica em `public/nucel-conector.zip`. Veja também `connector/LEIA-ME.md`.
+O conector fica em `connector/`. Veja `connector/LEIA-ME.md`.
 
 Ele:
 
@@ -54,7 +73,7 @@ Ele:
 
 As tabelas NuCel ficam com RLS habilitado e sem permissão direta para `anon`/`authenticated`. O navegador conversa somente com as rotas `/api/*` do NuCel. O servidor valida a sessão e a função do usuário antes de acessar o banco com a chave secreta.
 
-A chave secreta do conector também nunca é enviada aos colaboradores; eles recebem apenas tokens HMAC temporários de 60 segundos limitados aos aparelhos liberados.
+A chave secreta do conector nunca é enviada aos colaboradores; eles recebem tokens HMAC temporários limitados aos aparelhos liberados.
 
 ## Desenvolvimento local
 
@@ -63,7 +82,11 @@ npm install
 npm run dev
 ```
 
-Copie `.env.example` para `.env.local` e preencha as variáveis antes de iniciar.
+Copie `.env.example` para `.env.local` no desenvolvimento Next.js. Para testar diretamente no runtime do Cloudflare, copie `.dev.vars.example` para `.dev.vars` e rode:
+
+```bash
+npm run preview
+```
 
 ## Teste físico
 

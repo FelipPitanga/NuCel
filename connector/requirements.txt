@@ -1,2 +1,1 @@
-Pillow>=11.3,<13
-av>=16,<18
+# NuCel DIRECT usa apenas a biblioteca padrao do Python.\n

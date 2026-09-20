@@ -1,30 +1,17 @@
-"""NuCel connector: low-latency Android streaming + scoped remote control. Python 3.10+."""
-import base64, hashlib, hmac, io, json, math, re, struct, subprocess, sys, threading, time
+"""NuCel connector: scrcpy H.264 passthrough + persistent ADB controls. Python 3.10+."""
+import base64, hashlib, hmac, json, math, re, socket, struct, subprocess, sys, threading, time
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-import av
-from av.error import FFmpegError
-from PIL import Image
-
 CONFIG = {}
 GLOBAL_LOCK = threading.Lock()
 LIMIT = threading.BoundedSemaphore(32)
-
-# Fallback still-image cache used by /frame and by tests.
-FRAMES = {}
-LOCKS = {}
-
-# Continuous H.264 -> JPEG stream sessions, one per active Android device.
-STREAMS = {}
-
-DEFAULT_STREAM_FPS = 10.0
-DEFAULT_FRAME_WIDTH = 420
-DEFAULT_JPEG_QUALITY = 55
-DEFAULT_VIDEO_BITRATE = 3_000_000
-STREAM_IDLE_SECONDS = 8.0
-STREAM_HTTP_SECONDS = 45.0
+ACTIVE_STREAMS = {}
+PUSHED = set()
+VIDEO_SIZES = {}
+CONTROL_SHELLS = {}
+STREAM_MAX_SECONDS = 45.0
 
 
 def decode(value):
@@ -57,237 +44,251 @@ def adb(*args, timeout=10):
     ).stdout
 
 
-def popen_adb(*args):
+def adb_popen(*args, stdin=None, stdout=None, stderr=None, text=False):
     return subprocess.Popen(
         [CONFIG.get('adb_path', 'adb'), *args],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        bufsize=0,
+        stdin=stdin, stdout=stdout, stderr=stderr, text=text,
+        bufsize=0 if not text else 1,
         creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
     )
 
 
-def device_lock(serial):
+def exact_read(sock, size):
+    chunks = []
+    remaining = size
+    while remaining:
+        data = sock.recv(remaining)
+        if not data:
+            raise ConnectionError('scrcpy stream closed')
+        chunks.append(data)
+        remaining -= len(data)
+    return b''.join(chunks)
+
+
+def free_port():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(('127.0.0.1', 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def server_path():
+    configured = CONFIG.get('scrcpy_server_path')
+    candidates = []
+    if configured:
+        candidates.append(Path(configured))
+    adb_path = Path(CONFIG.get('adb_path', 'adb'))
+    if adb_path.name.lower() != 'adb':
+        candidates.append(adb_path.with_name('scrcpy-server'))
+    candidates.extend([
+        Path(__file__).resolve().parents[2] / 'scrcpy-server',
+        Path(__file__).resolve().parent / 'scrcpy-server',
+        Path.cwd() / 'scrcpy-server',
+    ])
+    for path in candidates:
+        if path.exists() and path.is_file():
+            return path
+    raise FileNotFoundError('scrcpy-server nao encontrado ao lado do adb.exe')
+
+
+def push_server(serial):
     with GLOBAL_LOCK:
-        return LOCKS.setdefault(serial, threading.Lock())
+        if serial in PUSHED:
+            return
+    path = server_path()
+    adb('-s', serial, 'push', str(path), '/data/local/tmp/nucel-scrcpy-server.jar', timeout=20)
+    with GLOBAL_LOCK:
+        PUSHED.add(serial)
 
 
-def still_frame(serial):
-    with device_lock(serial):
-        previous = FRAMES.get(serial)
-        if previous and time.monotonic() - previous[0] < .35:
-            return previous[1], previous[2]
-        raw = adb('-s', serial, 'exec-out', 'screencap', '-p')
-        with Image.open(io.BytesIO(raw)) as im:
-            size = im.size
-            im = im.convert('RGB')
-            im.thumbnail((420, 1000))
-            output = io.BytesIO()
-            im.save(output, 'JPEG', quality=55)
-        data = output.getvalue()
-        FRAMES[serial] = (time.monotonic(), data, size)
-        return data, size
-
-
-def parse_wm_size(serial):
-    try:
-        out = adb('-s', serial, 'shell', 'wm', 'size', timeout=4).decode(errors='replace')
-        values = re.findall(r'(\d+)x(\d+)', out)
-        if values:
-            w, h = values[-1]
-            return int(w), int(h)
-    except (OSError, subprocess.SubprocessError, ValueError):
-        pass
-    return None
-
-
-class VideoSession:
+class ControlShell:
     def __init__(self, serial):
         self.serial = serial
-        self.cond = threading.Condition()
-        self.thread = None
-        self.process = None
-        self.latest = None
-        self.seq = 0
-        self.size = None
-        self.active_until = 0.0
-        self.last_error = None
+        self.lock = threading.Lock()
+        self.proc = None
 
-    def settings(self):
-        try:
-            fps = max(4.0, min(15.0, float(CONFIG.get('target_fps', DEFAULT_STREAM_FPS))))
-            width = max(280, min(720, int(CONFIG.get('frame_width', DEFAULT_FRAME_WIDTH))))
-            quality = max(35, min(80, int(CONFIG.get('jpeg_quality', DEFAULT_JPEG_QUALITY))))
-            bitrate = max(1_000_000, min(8_000_000, int(CONFIG.get('video_bitrate', DEFAULT_VIDEO_BITRATE))))
-        except (TypeError, ValueError):
-            fps, width, quality, bitrate = (
-                DEFAULT_STREAM_FPS,
-                DEFAULT_FRAME_WIDTH,
-                DEFAULT_JPEG_QUALITY,
-                DEFAULT_VIDEO_BITRATE,
-            )
-        return fps, width, quality, bitrate
+    def ensure(self):
+        if self.proc and self.proc.poll() is None and self.proc.stdin:
+            return
+        self.close()
+        self.proc = adb_popen(
+            '-s', self.serial, 'shell',
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, text=True,
+        )
+        if not self.proc.stdin:
+            raise OSError('ADB shell indisponivel')
 
-    def touch(self):
-        self.active_until = time.monotonic() + STREAM_IDLE_SECONDS
-        with GLOBAL_LOCK:
-            if self.thread and self.thread.is_alive():
-                return
-            self.thread = threading.Thread(
-                target=self.run,
-                daemon=True,
-                name=f'nucel-video-{self.serial}',
-            )
-            self.thread.start()
-
-    def publish(self, data, size):
-        with self.cond:
-            # Avoid retransmitting an identical screen.
-            if self.latest == data:
-                self.cond.notify_all()
-                return
-            self.latest = data
-            self.size = size
-            self.seq += 1
-            self.last_error = None
-            self.cond.notify_all()
-
-    def wait_after(self, seq, timeout=1.5):
-        self.touch()
-        deadline = time.monotonic() + timeout
-        with self.cond:
-            while self.seq <= seq and time.monotonic() < deadline:
-                self.cond.wait(deadline - time.monotonic())
-            return self.seq, self.latest, self.size
-
-    def terminate_process(self):
-        p = self.process
-        self.process = None
-        if p and p.poll() is None:
+    def send(self, command):
+        with self.lock:
+            self.ensure()
             try:
-                p.kill()
+                self.proc.stdin.write(command + '\n')
+                self.proc.stdin.flush()
+            except (OSError, BrokenPipeError):
+                self.close()
+                self.ensure()
+                self.proc.stdin.write(command + '\n')
+                self.proc.stdin.flush()
+
+    def close(self):
+        proc, self.proc = self.proc, None
+        if proc and proc.poll() is None:
+            try:
+                proc.kill()
             except OSError:
                 pass
 
-    def run(self):
-        fps, width, quality, bitrate = self.settings()
-        frame_interval = 1.0 / fps
 
-        try:
-            while time.monotonic() < self.active_until:
-                self.terminate_process()
-                process = popen_adb(
-                    '-s', self.serial, 'exec-out',
-                    'screenrecord',
-                    '--output-format=h264',
-                    '--bit-rate', str(bitrate),
-                    '-'
-                )
-                self.process = process
-                last_emit = 0.0
-                container = None
-
-                try:
-                    if not process.stdout:
-                        raise OSError('No video stdout')
-                    container = av.open(process.stdout, mode='r', format='h264')
-
-                    for packet_frame in container.decode(video=0):
-                        if time.monotonic() >= self.active_until:
-                            break
-                        now = time.monotonic()
-                        if now - last_emit < frame_interval:
-                            continue
-                        last_emit = now
-
-                        img = packet_frame.to_image().convert('RGB')
-                        full_size = img.size
-                        if img.width > width:
-                            new_h = max(1, round(img.height * width / img.width))
-                            img = img.resize((width, new_h), Image.Resampling.BILINEAR)
-                        output = io.BytesIO()
-                        img.save(output, 'JPEG', quality=quality, optimize=False)
-                        self.publish(output.getvalue(), full_size)
-
-                except (FFmpegError, OSError, subprocess.SubprocessError, ValueError) as exc:
-                    self.last_error = str(exc)
-                finally:
-                    if container is not None:
-                        try:
-                            container.close()
-                        except Exception:
-                            pass
-                    self.terminate_process()
-
-                # Android screenrecord can exit after a device-defined time limit.
-                # Restart seamlessly while the browser still has this screen open.
-                if time.monotonic() < self.active_until:
-                    time.sleep(.15)
-        finally:
-            self.terminate_process()
-            with GLOBAL_LOCK:
-                current = STREAMS.get(self.serial)
-                if current is self:
-                    # Keep the latest frame around briefly, but allow a new
-                    # process to start cleanly the next time the screen opens.
-                    self.thread = None
-
-
-def video_session(serial):
+def control_shell(serial):
     with GLOBAL_LOCK:
-        session = STREAMS.get(serial)
-        if session is None:
-            session = VideoSession(serial)
-            STREAMS[serial] = session
-        return session
+        shell = CONTROL_SHELLS.get(serial)
+        if shell is None:
+            shell = ControlShell(serial)
+            CONTROL_SHELLS[serial] = shell
+        return shell
 
 
-def device_size(serial):
-    session = STREAMS.get(serial)
-    if session and session.size:
-        return session.size
-    size = parse_wm_size(serial)
+class ScrcpyStream:
+    def __init__(self, serial):
+        self.serial = serial
+        self.port = None
+        self.server_proc = None
+        self.sock = None
+        self.closed = False
+
+    def stop(self):
+        self.closed = True
+        sock, self.sock = self.sock, None
+        if sock:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                sock.close()
+            except OSError:
+                pass
+        proc, self.server_proc = self.server_proc, None
+        if proc and proc.poll() is None:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+        if self.port:
+            try:
+                adb('-s', self.serial, 'forward', '--remove', f'tcp:{self.port}', timeout=4)
+            except Exception:
+                pass
+            self.port = None
+
+    def start(self):
+        push_server(self.serial)
+        self.port = free_port()
+        adb('-s', self.serial, 'forward', f'tcp:{self.port}', 'localabstract:scrcpy', timeout=5)
+
+        version = str(CONFIG.get('scrcpy_server_version', '4.1'))
+        max_size = max(360, min(1080, int(CONFIG.get('max_size', 720))))
+        max_fps = max(10, min(60, int(CONFIG.get('max_fps', 30))))
+        bitrate = max(1_000_000, min(12_000_000, int(CONFIG.get('video_bitrate', 3_000_000))))
+
+        args = [
+            '-s', self.serial, 'shell',
+            'CLASSPATH=/data/local/tmp/nucel-scrcpy-server.jar',
+            'app_process', '/', 'com.genymobile.scrcpy.Server', version,
+            'tunnel_forward=true', 'audio=false', 'control=false', 'cleanup=false',
+            'send_device_meta=false', 'send_dummy_byte=false', 'send_stream_meta=false',
+            'video_codec=h264', f'max_size={max_size}', f'max_fps={max_fps}',
+            f'video_bit_rate={bitrate}', 'log_level=warn',
+        ]
+        self.server_proc = adb_popen(*args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        deadline = time.monotonic() + 5.0
+        last = None
+        while time.monotonic() < deadline:
+            if self.server_proc.poll() is not None:
+                raise OSError('scrcpy-server encerrou antes de conectar')
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(2.0)
+            try:
+                s.connect(('127.0.0.1', self.port))
+                s.settimeout(10.0)
+                self.sock = s
+                return
+            except OSError as exc:
+                last = exc
+                s.close()
+                time.sleep(.08)
+        raise OSError(f'nao conectou ao scrcpy-server: {last}')
+
+    def packets(self):
+        if not self.sock:
+            raise OSError('stream nao iniciado')
+        while not self.closed:
+            header = exact_read(self.sock, 12)
+
+            if header[0] & 0x80:
+                width = int.from_bytes(header[4:8], 'big')
+                height = int.from_bytes(header[8:12], 'big')
+                if 0 < width <= 8192 and 0 < height <= 8192:
+                    VIDEO_SIZES[self.serial] = (width, height)
+                    yield 1, 0, struct.pack('>II', width, height)
+                continue
+
+            pts_flags = int.from_bytes(header[:8], 'big')
+            size = int.from_bytes(header[8:12], 'big')
+            if size <= 0 or size > 8_000_000:
+                raise ValueError('pacote de video invalido')
+            data = exact_read(self.sock, size)
+
+            is_config = bool(pts_flags & (1 << 62))
+            is_key = bool(pts_flags & (1 << 61))
+            pts = pts_flags & ((1 << 61) - 1)
+            yield 2 if is_config else (3 if is_key else 4), pts, data
+
+
+def display_size(serial):
+    size = VIDEO_SIZES.get(serial)
     if size:
         return size
-    return still_frame(serial)[1]
+    out = adb('-s', serial, 'shell', 'wm', 'size', timeout=4).decode(errors='replace')
+    matches = re.findall(r'(\d+)x(\d+)', out)
+    if not matches:
+        raise ValueError('tamanho do aparelho indisponivel')
+    width, height = matches[-1]
+    return int(width), int(height)
 
 
 def perform(serial, body):
     typ = body.get('type')
     if typ == 'key':
-        keys = {'home': '3', 'back': '4', 'recent': '187'}
-        if body.get('key') not in keys:
+        keys = {'home': 3, 'back': 4, 'recent': 187}
+        key = body.get('key')
+        if key not in keys:
             raise ValueError('Invalid key')
-        args = ['keyevent', keys[body['key']]]
+        command = f'input keyevent {keys[key]}'
     elif typ in ('tap', 'swipe'):
-        width, height = device_size(serial)
+        width, height = display_size(serial)
 
-        def coord(key, maximum):
-            value = body.get(key)
+        def coord(name, maximum):
+            value = body.get(name)
             if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1:
                 raise ValueError('Invalid coordinate')
-            return str(min(maximum - 1, round(value * maximum)))
+            return min(maximum - 1, round(value * maximum))
 
-        args = [typ, coord('x', width), coord('y', height)]
-        if typ == 'swipe':
-            duration = body.get('duration', 220)
+        x, y = coord('x', width), coord('y', height)
+        if typ == 'tap':
+            command = f'input tap {x} {y}'
+        else:
+            x2, y2 = coord('x2', width), coord('y2', height)
+            duration = body.get('duration', 160)
             if type(duration) not in (int, float) or not math.isfinite(duration):
                 raise ValueError('Invalid duration')
-            args += [
-                coord('x2', width),
-                coord('y2', height),
-                str(max(80, min(1000, int(duration)))),
-            ]
+            command = f'input swipe {x} {y} {x2} {y2} {max(50, min(800, int(duration)))}'
     else:
         raise ValueError('Invalid action')
-
-    # Do not serialize input with screen capture. This is deliberate: a tap
-    # should reach Android immediately even if a video frame is being decoded.
-    adb('-s', serial, 'shell', 'input', *args, timeout=5)
-
-    session = STREAMS.get(serial)
-    if session:
-        session.active_until = time.monotonic() + STREAM_IDLE_SECONDS
+    control_shell(serial).send(command)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -298,15 +299,14 @@ class Handler(BaseHTTPRequestHandler):
         self.connection.settimeout(20)
 
     def log_message(self, *_):
-        pass  # Never log tokens, screen contents, or serial numbers.
+        pass
 
     def cors(self):
         if self.headers.get('Origin') == CONFIG['allowed_origin']:
             self.send_header('Access-Control-Allow-Origin', CONFIG['allowed_origin'])
-            self.send_header('Access-Control-Expose-Headers', 'X-NuCel-Frame')
             self.send_header('Vary', 'Origin')
 
-    def send(self, code, body=b'', mime='application/json', extra=None):
+    def send(self, code, body=b'', mime='application/json'):
         if not isinstance(body, bytes):
             body = json.dumps(body).encode()
         self.send_response(code)
@@ -315,9 +315,6 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Content-Length', str(len(body)))
-        if extra:
-            for key, value in extra.items():
-                self.send_header(key, str(value))
         self.end_headers()
         if body:
             self.wfile.write(body)
@@ -347,49 +344,43 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError('Unauthorized')
         return validate_token(token[7:], origin)
 
-    def validate_serial(self, claims, serial):
-        return (
-            isinstance(serial, str)
-            and re.fullmatch(r'[\w.:-]{1,100}', serial)
-            and serial in claims['serials']
-        )
+    @staticmethod
+    def serial_allowed(claims, serial):
+        return isinstance(serial, str) and re.fullmatch(r'[\w.:-]{1,100}', serial) and serial in claims['serials']
 
-    def stream_video(self, serial):
-        session = video_session(serial)
-        session.touch()
-
-        self.send_response(200)
-        self.cors()
-        self.send_header('Content-Type', 'application/x-nucel-jpeg-stream')
-        self.send_header('Cache-Control', 'no-store, no-transform')
-        self.send_header('X-Content-Type-Options', 'nosniff')
-        self.send_header('Connection', 'close')
-        self.end_headers()
-
-        seq = 0
-        deadline = time.monotonic() + STREAM_HTTP_SECONDS
-        last_heartbeat = time.monotonic()
+    def video_stream(self, serial):
+        stream = ScrcpyStream(serial)
+        with GLOBAL_LOCK:
+            old = ACTIVE_STREAMS.get(serial)
+            ACTIVE_STREAMS[serial] = stream
+        if old:
+            old.stop()
 
         try:
-            while time.monotonic() < deadline:
-                session.active_until = time.monotonic() + STREAM_IDLE_SECONDS
-                next_seq, data, _ = session.wait_after(seq, timeout=1.0)
+            stream.start()
+            self.send_response(200)
+            self.cors()
+            self.send_header('Content-Type', 'application/x-nucel-h264')
+            self.send_header('Cache-Control', 'no-store, no-transform')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.send_header('Connection', 'close')
+            self.end_headers()
 
-                if data is not None and next_seq > seq:
-                    packet = struct.pack('>I', len(data)) + data
-                    self.wfile.write(packet)
-                    self.wfile.flush()
-                    seq = next_seq
-                    last_heartbeat = time.monotonic()
-                elif time.monotonic() - last_heartbeat > 2.0:
-                    # Zero-length heartbeat keeps proxies/tunnels from treating
-                    # an unchanged Android screen as an idle connection.
-                    self.wfile.write(struct.pack('>I', 0))
-                    self.wfile.flush()
-                    last_heartbeat = time.monotonic()
-        except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError):
+            deadline = time.monotonic() + STREAM_MAX_SECONDS
+            for kind, pts, payload in stream.packets():
+                if time.monotonic() >= deadline:
+                    break
+                self.wfile.write(bytes([kind]) + struct.pack('>QI', pts, len(payload)))
+                if payload:
+                    self.wfile.write(payload)
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError, ValueError):
             pass
         finally:
+            stream.stop()
+            with GLOBAL_LOCK:
+                if ACTIVE_STREAMS.get(serial) is stream:
+                    ACTIVE_STREAMS.pop(serial, None)
             self.close_connection = True
 
     def handle_request(self):
@@ -403,7 +394,6 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             url = urlparse(self.path)
-
             if url.path == '/status' and self.command == 'GET':
                 lines = adb('devices').decode(errors='replace').splitlines()[1:]
                 visible = {}
@@ -424,51 +414,43 @@ class Handler(BaseHTTPRequestHandler):
 
             params = parse_qs(url.query)
             serial = body.get('serial') if self.command == 'POST' else params.get('serial', [''])[0]
-            if not self.validate_serial(claims, serial):
+            if not self.serial_allowed(claims, serial):
                 return self.send(403, {'error': 'Device not allowed'})
 
-            if url.path == '/stream' and self.command == 'GET':
-                return self.stream_video(serial)
-
-            # /frame remains as a safe fallback and for diagnostics.
-            if url.path == '/frame' and self.command == 'GET':
-                return self.send(200, still_frame(serial)[0], 'image/jpeg')
-
+            if url.path == '/video' and self.command == 'GET':
+                return self.video_stream(serial)
             if url.path == '/action' and self.command == 'POST':
                 perform(serial, body)
                 return self.send(200, {'ok': True})
-
             return self.send(404, {'error': 'Not found'})
 
         except (ValueError, KeyError, TypeError):
             self.send(400, {'error': 'Invalid request'})
-        except (subprocess.SubprocessError, OSError, FFmpegError):
+        except (subprocess.SubprocessError, OSError):
             self.send(503, {'error': 'Device unavailable'})
         finally:
             LIMIT.release()
 
 
 if __name__ == '__main__':
-    path = Path(__file__).with_name('config.json')
-    if not path.exists():
+    config_path = Path(__file__).with_name('config.json')
+    if not config_path.exists():
         raise SystemExit('Copie config.example.json para config.json e configure sua conexao primeiro.')
-
-    CONFIG.update(json.loads(path.read_text(encoding='utf-8-sig')))
+    CONFIG.update(json.loads(config_path.read_text(encoding='utf-8-sig')))
 
     if len(CONFIG.get('secret', '')) < 60 or 'COLE_' in CONFIG.get('secret', ''):
         raise SystemExit('Cole a chave gerada no painel NuCel no campo secret.')
     if not CONFIG.get('allowed_origin', '').startswith('https://'):
-        raise SystemExit('Informe o endereco HTTPS do seu painel em allowed_origin, sem barra no final.')
+        raise SystemExit('Informe o endereco HTTPS do painel em allowed_origin, sem barra no final.')
 
     try:
         adb('version')
-    except (OSError, subprocess.SubprocessError):
-        raise SystemExit('ADB nao encontrado. Confira adb_path no config.json.')
+        path = server_path()
+    except (OSError, subprocess.SubprocessError, FileNotFoundError) as exc:
+        raise SystemExit(f'ADB/scrcpy-server nao encontrado: {exc}')
 
-    print(
-        'NuCel STREAM pronto em 127.0.0.1:8765 | '
-        f'alvo {CONFIG.get("target_fps", DEFAULT_STREAM_FPS)} FPS | '
-        'video continuo H.264 -> JPEG.'
-    )
-    print('Mantenha esta janela aberta e o tunel HTTPS apontando para http://127.0.0.1:8765.')
+    print('NuCel DIRECT pronto em 127.0.0.1:8765.')
+    print(f'scrcpy-server: {path}')
+    print('Video: H.264 nativo do scrcpy -> Chrome WebCodecs. Sem JPEG/PyAV.')
+    print('Controle: ADB shell persistente. Mantenha esta janela e o tunel HTTPS abertos.')
     ThreadingHTTPServer(('127.0.0.1', 8765), Handler).serve_forever()

@@ -5,6 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 import av
+from av.error import FFmpegError
 from PIL import Image
 
 CONFIG = {}
@@ -207,7 +208,7 @@ class VideoSession:
                         img.save(output, 'JPEG', quality=quality, optimize=False)
                         self.publish(output.getvalue(), full_size)
 
-                except (av.AVError, OSError, subprocess.SubprocessError, ValueError) as exc:
+                except (FFmpegError, OSError, subprocess.SubprocessError, ValueError) as exc:
                     self.last_error = str(exc)
                 finally:
                     try:
@@ -439,7 +440,7 @@ class Handler(BaseHTTPRequestHandler):
 
         except (ValueError, KeyError, TypeError):
             self.send(400, {'error': 'Invalid request'})
-        except (subprocess.SubprocessError, OSError, av.AVError):
+        except (subprocess.SubprocessError, OSError, FFmpegError):
             self.send(503, {'error': 'Device unavailable'})
         finally:
             LIMIT.release()

@@ -7,11 +7,6 @@
     "nodejs_compat"
   ],
   "keep_vars": true,
-  "secrets": {
-    "required": [
-      "SUPABASE_SECRET_KEY"
-    ]
-  },
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"

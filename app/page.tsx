@@ -15,7 +15,9 @@ async function request(body?:Record<string,unknown>){
   return d;
 }
 async function bridge(c:Connection,path:string,body?:Record<string,unknown>){
-  const r=await fetch(c.url+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+c.token,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(12000)});
+  const init:RequestInit={method:body?'POST':'GET',headers:{Authorization:'Bearer '+c.token,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined};
+  if(!path.startsWith('/stream')) init.signal=AbortSignal.timeout(12000);
+  const r=await fetch(c.url+path,init);
   if(!r.ok) throw new Error(r.status===401?'Sessão do aparelho expirou.':'Conector indisponível.');
   return r;
 }
@@ -102,33 +104,57 @@ function Phone({d,c,close}:{d:Device;c:Connection;close:()=>void}){
   const down=useRef<{x:number;y:number;t:number}|null>(null);
 
   useEffect(()=>{
-    let stop=false,url='',seq=0,retry:ReturnType<typeof setTimeout>|undefined;
-    const loop=async()=>{
+    let stop=false,url='',retry:ReturnType<typeof setTimeout>|undefined,reader:ReadableStreamDefaultReader<Uint8Array>|undefined;
+
+    const concat=(a:Uint8Array,b:Uint8Array)=>{
+      const out=new Uint8Array(a.length+b.length);
+      out.set(a,0);out.set(b,a.length);
+      return out;
+    };
+
+    const run=async()=>{
       while(!stop){
         try{
-          const r=await bridge(conn.current,'/frame?serial='+encodeURIComponent(d.serial)+'&after='+seq);
-          if(stop)return;
-          if(r.status===204)continue;
-          const next=Number(r.headers.get('X-NuCel-Frame')||0);
-          const b=await r.blob();
-          if(stop)return;
-          if(!b.size)continue;
-          const u=URL.createObjectURL(b);
-          if(url)URL.revokeObjectURL(url);
-          url=u;
-          if(Number.isFinite(next)&&next>0)seq=next;
-          else seq++;
-          setSrc(u);
+          const r=await bridge(conn.current,'/stream?serial='+encodeURIComponent(d.serial));
+          if(!r.body)throw new Error('Stream indisponível.');
+          reader=r.body.getReader();
+          let buffer=new Uint8Array(0);
           setErr(false);
+
+          while(!stop){
+            const part=await reader.read();
+            if(part.done)break;
+            if(part.value?.length)buffer=concat(buffer,part.value);
+
+            while(buffer.length>=4){
+              const len=((buffer[0]<<24)>>>0)+(buffer[1]<<16)+(buffer[2]<<8)+buffer[3];
+              if(len===0){buffer=buffer.slice(4);continue}
+              if(len>2_000_000)throw new Error('Quadro inválido.');
+              if(buffer.length<4+len)break;
+
+              const jpeg=buffer.slice(4,4+len);
+              buffer=buffer.slice(4+len);
+
+              const u=URL.createObjectURL(new Blob([jpeg],{type:'image/jpeg'}));
+              if(url)URL.revokeObjectURL(url);
+              url=u;
+              setSrc(u);
+              setErr(false);
+            }
+          }
         }catch{
           if(stop)return;
           setErr(true);
-          await new Promise<void>(resolve=>{retry=setTimeout(resolve,500)});
+          await new Promise<void>(resolve=>{retry=setTimeout(resolve,250)});
+        }finally{
+          try{await reader?.cancel()}catch{}
+          reader=undefined;
         }
       }
     };
-    loop();
-    return()=>{stop=true;if(retry)clearTimeout(retry);if(url)URL.revokeObjectURL(url)};
+
+    run();
+    return()=>{stop=true;if(retry)clearTimeout(retry);try{reader?.cancel()}catch{}if(url)URL.revokeObjectURL(url)};
   },[d.serial,gen]);
 
   const act=(body:Record<string,unknown>)=>{
@@ -138,7 +164,7 @@ function Phone({d,c,close}:{d:Device;c:Connection;close:()=>void}){
     const r=e.currentTarget.getBoundingClientRect();
     return{x:Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),y:Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))};
   };
-  return <article className="screen"><header><span className={'dot '+(!err&&src?'on':'')}/><b>{d.name}</b><button onClick={close}><X/></button></header><div className="display">{src?<img className={err?'stale':''} src={src} alt={'Tela de '+d.name} draggable={false} onPointerDown={e=>{e.currentTarget.setPointerCapture(e.pointerId);down.current={...point(e),t:Date.now()}}} onPointerUp={e=>{if(!down.current)return;const a=down.current,b=point(e);down.current=null;act(Math.hypot(a.x-b.x,a.y-b.y)<.02?{type:'tap',x:b.x,y:b.y}:{type:'swipe',x:a.x,y:a.y,x2:b.x,y2:b.y,duration:240})}}/>:<div><Loader2 className="spin"/><span>Conectando…</span></div>}{err&&src&&<span className="screen-warning">Reconectando…</span>}</div><nav><button onClick={()=>act({type:'key',key:'back'})}><ChevronLeft/></button><button onClick={()=>act({type:'key',key:'home'})}><Circle/></button><button onClick={()=>act({type:'key',key:'recent'})}><Square/></button></nav><footer><button onClick={()=>setGen(x=>x+1)}><RotateCw/>Reiniciar</button><button onClick={close}><Power/>Desligar</button></footer></article>
+  return <article className="screen"><header><span className={'dot '+(!err&&src?'on':'')}/><b>{d.name}</b><button onClick={close}><X/></button></header><div className="display">{src?<img className={err?'stale':''} src={src} alt={'Tela de '+d.name} draggable={false} onPointerDown={e=>{e.currentTarget.setPointerCapture(e.pointerId);down.current={...point(e),t:Date.now()}}} onPointerUp={e=>{if(!down.current)return;const a=down.current,b=point(e);down.current=null;act(Math.hypot(a.x-b.x,a.y-b.y)<.02?{type:'tap',x:b.x,y:b.y}:{type:'swipe',x:a.x,y:a.y,x2:b.x,y2:b.y,duration:180})}}/>:<div><Loader2 className="spin"/><span>Conectando vídeo…</span></div>}{err&&src&&<span className="screen-warning">Reconectando stream…</span>}</div><nav><button onClick={()=>act({type:'key',key:'back'})}><ChevronLeft/></button><button onClick={()=>act({type:'key',key:'home'})}><Circle/></button><button onClick={()=>act({type:'key',key:'recent'})}><Square/></button></nav><footer><button onClick={()=>setGen(x=>x+1)}><RotateCw/>Reiniciar</button><button onClick={close}><Power/>Desligar</button></footer></article>
 }
 function Auth({message,done}:{message:string;done:()=>void}){const[mode,setMode]=useState<'login'|'register'>('login'),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);const submit=async(e:React.FormEvent<HTMLFormElement>)=>{e.preventDefault();setBusy(true);try{const r=await fetch('/api/auth/'+mode,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});const d=await r.json();if(!r.ok)throw new Error(d.error);if(d.needsConfirmation){setNotice('Conta criada. Confirme seu e-mail e depois entre.');setMode('login')}else await done()}catch(e){setNotice((e as Error).message)}finally{setBusy(false)}};return <section className="auth"><ShieldCheck size={30}/><h2>Entre no NuCel</h2><p>{message}</p><div className="auth-tabs"><button className={mode==='login'?'active':''} onClick={()=>setMode('login')}>Entrar</button><button className={mode==='register'?'active':''} onClick={()=>setMode('register')}>Criar conta</button></div><form onSubmit={submit}>{mode==='register'&&<Field name="name" label="Nome" placeholder="Seu nome"/>}<Field name="email" label="E-mail" type="email" placeholder="voce@empresa.com"/><Field name="password" label="Senha" type="password" placeholder="Sua senha"/>{notice&&<div className="notice">{notice}</div>}<button className="primary" disabled={busy}>{busy?'Aguarde…':mode==='login'?'Entrar':'Criar conta'}</button></form></section>}
 function Field({name,label,placeholder,type='text'}:{name:string;label:string;placeholder:string;type?:string}){return <label>{label}<input name={name} type={type} placeholder={placeholder} required minLength={type==='password'?8:undefined}/></label>}

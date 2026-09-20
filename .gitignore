@@ -1,5 +1,3 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
 # dependencies
 /node_modules
 /.pnp
@@ -13,10 +11,13 @@
 # testing
 /coverage
 
-# next.js
+# next.js + Cloudflare output
 /.next/
+/.open-next/
+/.wrangler/
 /.vinext/
 /out/
+cloudflare-env.d.ts
 
 # misc
 .DS_Store
@@ -28,15 +29,15 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
+# local env / Cloudflare secrets
 .env*
 !.env.example
-
-# vercel
-.vercel
+.dev.vars*
+!.dev.vars.example
 
 # typescript
 next-env.d.ts
+
 # Checkout-local execution profile and tool state; never publish them.
 /.agents/
 /.codex/

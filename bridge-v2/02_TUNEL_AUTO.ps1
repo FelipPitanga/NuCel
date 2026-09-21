@@ -21,11 +21,14 @@ Remove-Item $ReadyPath -Force -ErrorAction SilentlyContinue
 function Read-DotEnv([string]$Path) {
     $out = @{}
     if (-not (Test-Path $Path)) { return $out }
+
     foreach ($line in Get-Content -LiteralPath $Path) {
         $trim = $line.Trim()
         if (-not $trim -or $trim.StartsWith('#')) { continue }
+
         $idx = $trim.IndexOf('=')
         if ($idx -lt 1) { continue }
+
         $key = $trim.Substring(0, $idx).Trim()
         $value = $trim.Substring($idx + 1)
         $out[$key] = $value
@@ -34,22 +37,16 @@ function Read-DotEnv([string]$Path) {
 }
 
 function Save-EngineConfig([string]$TunnelHost) {
-    $cfg = @{}
-    if (Test-Path $ConfigPath) {
-        $cfg = Get-Content -Raw -LiteralPath $ConfigPath | ConvertFrom-Json
-    }
-
-    $frame = @()
-    if ($null -ne $cfg.frameAncestors) { $frame = @($cfg.frameAncestors) }
-    $frame += 'https://nucel.nuvixgestao.workers.dev'
-    $frame += 'http://localhost:3000'
-    $frame += 'http://127.0.0.1:3000'
-    $frame += 'http://localhost:5159'
-    $frame = @($frame | Select-Object -Unique)
+    $frame = @(
+        'https://nucel.nuvixgestao.workers.dev',
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:5159'
+    ) | Select-Object -Unique
 
     $obj = [ordered]@{
         webPort = 8000
-        frameAncestors = $frame
+        frameAncestors = @($frame)
         allowedHosts = @($TunnelHost)
     }
 
@@ -62,6 +59,7 @@ function Sync-Supabase([string]$Url) {
     $envs = Read-DotEnv $EnvPath
     $supa = $envs['SUPABASE_URL']
     $secret = $envs['SUPABASE_SECRET_KEY']
+
     if (-not $supa -or -not $secret) {
         throw '.env.local sem SUPABASE_URL/SUPABASE_SECRET_KEY'
     }
@@ -69,9 +67,11 @@ function Sync-Supabase([string]$Url) {
     $endpoint = $supa.TrimEnd('/') + '/rest/v1/nucel_bridges?name=eq.PC%20Principal'
     $headers = @{
         apikey = $secret
+        Authorization = 'Bearer ' + $secret
         Accept = 'application/json'
         Prefer = 'return=representation'
     }
+
     $body = @{ url = $Url } | ConvertTo-Json -Compress
     Invoke-RestMethod -Method Patch -Uri $endpoint -Headers $headers -ContentType 'application/json' -Body $body | Out-Null
 }
@@ -85,7 +85,11 @@ Write-Host 'Criando Quick Tunnel e aguardando URL...'
 Write-Host ''
 
 $synced = $false
-& $cloudflared tunnel --url http://127.0.0.1:8000 2>&1 | ForEach-Object {
+$cmdLine = '"' + $cloudflared + '" tunnel --url http://127.0.0.1:8000 2>&1'
+
+# Run through cmd.exe so cloudflared log lines written to stderr stay ordinary
+# output instead of becoming terminating PowerShell NativeCommandError records.
+& $env:ComSpec /d /s /c $cmdLine | ForEach-Object {
     $line = [string]$_
     Write-Host $line
 
@@ -96,7 +100,9 @@ $synced = $false
         try {
             Save-EngineConfig $hostName
             Sync-Supabase $url
-            [IO.File]::WriteAllText($ReadyPath, $url, (New-Object System.Text.UTF8Encoding($false)))
+
+            $utf8 = New-Object System.Text.UTF8Encoding($false)
+            [IO.File]::WriteAllText($ReadyPath, $url, $utf8)
 
             Write-Host ''
             Write-Host '===============================================' -ForegroundColor Green
@@ -106,12 +112,13 @@ $synced = $false
             Write-Host 'NAO FECHE ESTA JANELA.' -ForegroundColor Yellow
             Write-Host '===============================================' -ForegroundColor Green
             Write-Host ''
+
             $synced = $true
         }
         catch {
             Write-Host ''
             Write-Host ('[ERRO] Falha ao sincronizar tunnel: ' + $_.Exception.Message) -ForegroundColor Red
-            Write-Host 'O cloudflared continuara rodando, mas o NuCel nao foi sincronizado.' -ForegroundColor Red
+            Write-Host 'O tunnel continuara aberto, mas a sincronizacao falhou.' -ForegroundColor Red
         }
     }
 }

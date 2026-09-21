@@ -5,8 +5,12 @@
 @media(max-width:600px){.topbar{padding:0 18px}.brand{font-size:20px}main{padding:25px 18px 50px}.hero h1{font-size:34px}.metrics{grid-template-columns:1fr 1fr}.metric{padding:14px}.metric>span{width:38px;height:38px}.tabs{overflow:auto}.tabs button{white-space:nowrap}.section-head{align-items:flex-start}.section-head .primary{padding:0 10px;font-size:12px}.screens{grid-template-columns:1fr;padding:15px}.auth{padding:22px}.row .secondary{width:100%}}
 
 
-/* Bridge v2 embed */
-.screen-embed{max-width:360px}
-.embed-display{background:#050406;overflow:hidden}
-.embed-display iframe{width:100%;height:100%;border:0;display:block;background:#050406}
+/* Bridge v2 direct player */
+.screen-direct{max-width:390px}
+.screen-name{display:flex;flex:1;min-width:0;flex-direction:column;gap:2px}
+.screen-name b{font-size:13px}
+.screen-name small{font-size:10px;color:#897b94;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.direct-display{height:650px;aspect-ratio:auto;background:#050406;overflow:hidden}
+.direct-display iframe{width:100%;height:100%;border:0;display:block;background:#050406}
 .embed-note{flex:1;padding:0 10px;color:#8f8199;font-size:10px;display:flex;align-items:center}
+@media(max-width:600px){.direct-display{height:min(650px,72vh)}}

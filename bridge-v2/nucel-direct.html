@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NuCel Direct Player</title>
+<link rel="stylesheet" href="/ws-scrcpy.css">
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;background:#050406;color:#f7f2fb;font-family:Arial,sans-serif;overflow:hidden}
+body{display:flex;align-items:center;justify-content:center}
+#shell{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#050406;overflow:hidden}
+#stream{width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#stream .device-view{max-width:100%;max-height:100%;width:fit-content;height:fit-content;justify-content:center!important}
+#stream .video{max-width:calc(100% - 52px);max-height:100%}
+#stream .video-layer,#stream .touch-layer{max-width:100%!important;max-height:100%!important;width:auto;height:auto}
+#stream .control-buttons-list{width:52px;max-height:100%;overflow:auto}
+#status{position:absolute;z-index:20;left:50%;top:50%;transform:translate(-50%,-50%);padding:8px 12px;border-radius:9px;background:#17131fcc;color:#ad9bb9;font-size:11px;white-space:nowrap}
+#status.hidden{display:none}
+#status.error{color:#fb7185;border:1px solid #fb718555}
+</style>
+</head>
+<body>
+<div id="shell">
+  <div id="stream"></div>
+  <div id="status">conectando…</div>
+</div>
+
+<script src="/ws-scrcpy.umd.js"></script>
+<script>
+(function(){
+  const qs=new URLSearchParams(location.search);
+  const device=qs.get('device')||'0059410259';
+  const status=document.getElementById('status');
+  const stream=document.getElementById('stream');
+
+  document.title='NuCel · '+device;
+
+  function fail(message){
+    status.textContent=message;
+    status.classList.remove('hidden');
+    status.classList.add('error');
+  }
+
+  if(!window.WsScrcpy){
+    fail('biblioteca do player não carregou');
+    return;
+  }
+
+  try{
+    window.__nucelHandle=window.WsScrcpy.startStream(stream,device,{
+      codec:'h264',
+      maxFps:30,
+      audio:false,
+      keyboard:true,
+      deviceKind:'phone',
+      onConnect:function(){
+        status.classList.add('hidden');
+      },
+      onDisconnect:function(){
+        fail('aparelho desconectado');
+      },
+      onError:function(err){
+        fail('erro: '+(err&&err.message?err.message:String(err)));
+      }
+    });
+  }catch(err){
+    fail('erro: '+(err&&err.message?err.message:String(err)));
+  }
+
+  window.addEventListener('beforeunload',function(){
+    try{window.__nucelHandle&&window.__nucelHandle.stop()}catch{}
+  });
+})();
+</script>
+</body>
+</html>

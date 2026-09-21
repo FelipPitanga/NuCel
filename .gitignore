@@ -50,3 +50,6 @@ next-env.d.ts
 __pycache__/
 *.pyc
 *.tsbuildinfo
+
+# Bridge v2 lab engine clone
+/bridge-v2/.engine/

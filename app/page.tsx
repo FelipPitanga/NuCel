@@ -1,6 +1,6 @@
 'use client';
-import {useCallback,useEffect,useRef,useState} from 'react';
-import {Check,ChevronLeft,Circle,Copy,Loader2,LogOut,Monitor,Play,Plus,Power,RotateCw,Server,ShieldCheck,Smartphone,Square,Users,Wifi,WifiOff,X} from 'lucide-react';
+import {useCallback,useEffect,useState} from 'react';
+import {Check,Copy,Loader2,LogOut,Monitor,Play,Plus,Server,ShieldCheck,Smartphone,Users,Wifi,WifiOff,X} from 'lucide-react';
 import {toast,Toaster} from 'sonner';
 
 type Device={id:string;name:string;model:string;serial:string;bridge_id:string};
@@ -13,13 +13,6 @@ async function request(body?:Record<string,unknown>){
   const d=await r.json();
   if(!r.ok) throw new Error(d.error||'Não foi possível continuar.');
   return d;
-}
-async function bridge(c:Connection,path:string,body?:Record<string,unknown>){
-  const init:RequestInit={method:body?'POST':'GET',headers:{Authorization:'Bearer '+c.token,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined};
-  if(!path.startsWith('/video')) init.signal=AbortSignal.timeout(12000);
-  const r=await fetch(c.url+path,init);
-  if(!r.ok) throw new Error(r.status===401?'Sessão do aparelho expirou.':'Conector indisponível.');
-  return r;
 }
 function Brand(){return <div className="brand"><span><Smartphone size={22}/></span><div>NuCel<small>por Nuvix</small></div></div>}
 
@@ -46,17 +39,11 @@ export default function Home(){
   useEffect(()=>{refresh();const t=setInterval(refresh,30000);return()=>clearInterval(t)},[refresh]);
   useEffect(()=>{
     if(!data)return;
-    let stop=false;
-    const poll=async()=>{
-      const next:Record<string,string>={};
-      await Promise.all(data.connections.map(async c=>{
-        try{const d=await (await bridge(c,'/status')).json();data.devices.filter(x=>x.bridge_id===c.id).forEach(x=>next[x.id]=d.devices[x.serial]||'offline')}
-        catch{data.devices.filter(x=>x.bridge_id===c.id).forEach(x=>next[x.id]='unreachable')}
-      }));
-      if(!stop)setStatus(next);
-    };
-    poll();const t=setInterval(poll,15000);return()=>{stop=true;clearInterval(t)};
+    const next:Record<string,string>={};
+    data.devices.forEach(device=>{next[device.id]='device'});
+    setStatus(next);
   },[data]);
+
 
   const admin=data?.me.role==='admin';
   const save=async(e:React.FormEvent<HTMLFormElement>,action:string)=>{
@@ -99,128 +86,31 @@ function Devices({data,status,active,setActive,admin,add}:{data:Data;status:Reco
   return <section><div className="metrics"><Metric icon={<Smartphone/>} n={data.devices.length} t="Aparelhos"/><Metric icon={<Wifi/>} n={online} t="Online"/><Metric icon={<WifiOff/>} n={data.devices.length-online} t="Sem conexão"/><Metric icon={<Monitor/>} n={active.length} t="Telas abertas"/></div><Head title={admin?'Todos os celulares':'Meus celulares'} text={admin?'Organize os aparelhos da operação.':'Aparelhos liberados para sua conta.'} action={admin?'Adicionar celular':undefined} click={add}/><div className="device-grid">{data.devices.map(d=><article className="device" key={d.id}><div className="device-top"><span className={'dot '+(status[d.id]==='device'?'on':'')}/><small>{status[d.id]==='device'?'Online':status[d.id]==='unauthorized'?'Autorizar no aparelho':'Sem conexão'}</small></div><Smartphone className="phone-icon"/><b>{d.name}</b><span>{d.model}</span><button disabled={status[d.id]!=='device'} onClick={()=>setActive(x=>x.includes(d.id)?x:[...x,d.id])}>{active.includes(d.id)?<><Check/>Aberto</>:<><Play/>Iniciar</>}</button></article>)}</div>{!data.devices.length&&<div className="empty">Nenhum celular cadastrado ainda.{admin&&<button onClick={add}>Conectar primeiro aparelho</button>}</div>}<div className="workspace"><div className="workspace-title"><Monitor/>Área de trabalho <small>{active.length} telas abertas</small></div>{active.length?<div className="screens">{active.map(id=>{const d=data.devices.find(x=>x.id===id),c=data.connections.find(x=>x.id===d?.bridge_id);return d&&c?<Phone key={id} d={d} c={c} close={()=>setActive(x=>x.filter(v=>v!==id))}/>:null})}</div>:<div className="workspace-empty"><Monitor size={42}/><b>Inicie um celular para controlar por aqui.</b><span>Abra vários e trabalhe com todos lado a lado.</span></div>}</div></section>
 }
 function Phone({d,c,close}:{d:Device;c:Connection;close:()=>void}){
-  const canvasRef=useRef<HTMLCanvasElement|null>(null);
-  const [err,setErr]=useState(false),[ready,setReady]=useState(false),[gen,setGen]=useState(0);
-  const conn=useRef(c);conn.current=c;
-  const down=useRef<{x:number;y:number;t:number}|null>(null);
+  const localBridge=typeof window!=='undefined'&&(window.location.hostname==='localhost'||window.location.hostname==='127.0.0.1')
+    ?'http://localhost:8000'
+    :'';
+  const engine=(process.env.NEXT_PUBLIC_NUCEL_BRIDGE_V2_URL||localBridge||c.url).replace(/\/$/,'');
+  const src=`${engine}/nucel-direct.html?device=${encodeURIComponent(d.serial)}`;
 
-  useEffect(()=>{
-    let stop=false,retry:ReturnType<typeof setTimeout>|undefined,reader:ReadableStreamDefaultReader<Uint8Array>|undefined;
-    let decoder:VideoDecoder|undefined;
-    let configBytes:Uint8Array|undefined;
-    let configured=false;
-
-    const concat=(a:Uint8Array,b:Uint8Array)=>{
-      const out=new Uint8Array(a.length+b.length);out.set(a);out.set(b,a.length);return out;
-    };
-    const codecFromSps=(data:Uint8Array)=>{
-      for(let i=0;i+7<data.length;i++){
-        let n=-1;
-        if(data[i]===0&&data[i+1]===0&&data[i+2]===1)n=i+3;
-        else if(data[i]===0&&data[i+1]===0&&data[i+2]===0&&data[i+3]===1)n=i+4;
-        if(n>0&&(data[n]&31)===7&&n+3<data.length){
-          return 'avc1.'+[data[n+1],data[n+2],data[n+3]].map(v=>v.toString(16).padStart(2,'0')).join('');
-        }
-      }
-      return 'avc1.42E01E';
-    };
-    const readU32=(a:Uint8Array,o:number)=>((a[o]*0x1000000)+(a[o+1]<<16)+(a[o+2]<<8)+a[o+3])>>>0;
-    const readU64=(a:Uint8Array,o:number)=>{
-      let v=0;
-      for(let i=0;i<8;i++)v=v*256+a[o+i];
-      return v;
-    };
-
-    const makeDecoder=async(codec:string)=>{
-      decoder?.close();
-      const nextDecoder=new VideoDecoder({
-        output:(frame)=>{
-          const canvas=canvasRef.current;
-          if(canvas){
-            if(canvas.width!==frame.displayWidth)canvas.width=frame.displayWidth;
-            if(canvas.height!==frame.displayHeight)canvas.height=frame.displayHeight;
-            const ctx=canvas.getContext('2d',{alpha:false});
-            ctx?.drawImage(frame,0,0,canvas.width,canvas.height);
-            setReady(true);setErr(false);
-          }
-          frame.close();
-        },
-        error:()=>setErr(true),
-      });
-      const cfg:VideoDecoderConfig={codec,optimizeForLatency:true,hardwareAcceleration:'prefer-hardware'};
-      const support=await VideoDecoder.isConfigSupported(cfg);
-      if(!support.supported){nextDecoder.close();throw new Error('H.264 não suportado pelo navegador.');}
-      nextDecoder.configure(cfg);
-      configured=true;
-      return nextDecoder;
-    };
-
-    const run=async()=>{
-      if(typeof VideoDecoder==='undefined'){setErr(true);toast.error('Este navegador não possui WebCodecs. Use Chrome ou Edge atualizado.');return}
-      while(!stop){
-        try{
-          configured=false;configBytes=undefined;
-          decoder?.close();decoder=undefined;
-
-          const r=await bridge(conn.current,'/video?serial='+encodeURIComponent(d.serial));
-          if(!r.body)throw new Error('Stream indisponível.');
-          reader=r.body.getReader();
-          let buffer=new Uint8Array(0);
-
-          while(!stop){
-            const part=await reader.read();
-            if(part.done)break;
-            if(part.value?.length)buffer=concat(buffer,part.value);
-
-            while(buffer.length>=13){
-              const kind=buffer[0],pts=readU64(buffer,1),len=readU32(buffer,9);
-              if(len>8_000_000)throw new Error('Pacote de vídeo inválido.');
-              if(buffer.length<13+len)break;
-              const payload=buffer.slice(13,13+len);
-              buffer=buffer.slice(13+len);
-
-              if(kind===1)continue;
-              if(kind===2){
-                configBytes=payload;
-                decoder=await makeDecoder(codecFromSps(payload));
-                continue;
-              }
-              const activeDecoder=decoder;
-              if((kind===3||kind===4)&&activeDecoder&&configured){
-                if(activeDecoder.decodeQueueSize>4&&kind===4)continue;
-                const data=kind===3&&configBytes?concat(configBytes,payload):payload;
-                activeDecoder.decode(new EncodedVideoChunk({
-                  type:kind===3?'key':'delta',
-                  timestamp:Number.isFinite(pts)?pts:performance.now()*1000,
-                  data,
-                }));
-              }
-            }
-          }
-        }catch(e){
-          if(stop)return;
-          setErr(true);
-          await new Promise<void>(resolve=>{retry=setTimeout(resolve,200)});
-        }finally{
-          try{await reader?.cancel()}catch{}
-          reader=undefined;
-        }
-      }
-    };
-
-    run();
-    return()=>{stop=true;if(retry)clearTimeout(retry);try{reader?.cancel()}catch{}try{decoder?.close()}catch{}};
-  },[d.serial,gen]);
-
-  const act=(body:Record<string,unknown>)=>{
-    bridge(conn.current,'/action',{serial:d.serial,...body}).catch(e=>toast.error((e as Error).message));
-  };
-  const point=(e:React.PointerEvent<HTMLCanvasElement>)=>{
-    const r=e.currentTarget.getBoundingClientRect();
-    return{x:Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),y:Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))};
-  };
-
-  return <article className="screen"><header><span className={'dot '+(!err&&ready?'on':'')}/><b>{d.name}</b><button onClick={close}><X/></button></header><div className="display"><canvas ref={canvasRef} className={err?'stale':''} onPointerDown={e=>{e.currentTarget.setPointerCapture(e.pointerId);down.current={...point(e),t:Date.now()}}} onPointerUp={e=>{if(!down.current)return;const a=down.current,b=point(e);down.current=null;act(Math.hypot(a.x-b.x,a.y-b.y)<.02?{type:'tap',x:b.x,y:b.y}:{type:'swipe',x:a.x,y:a.y,x2:b.x,y2:b.y,duration:140})}}/>{!ready&&<div className="screen-loading"><Loader2 className="spin"/><span>Conectando H.264…</span></div>}{err&&ready&&<span className="screen-warning">Reconectando…</span>}</div><nav><button onClick={()=>act({type:'key',key:'back'})}><ChevronLeft/></button><button onClick={()=>act({type:'key',key:'home'})}><Circle/></button><button onClick={()=>act({type:'key',key:'recent'})}><Square/></button></nav><footer><button onClick={()=>setGen(x=>x+1)}><RotateCw/>Reiniciar</button><button onClick={close}><Power/>Desligar</button></footer></article>
+  return <article className="screen screen-direct">
+    <header>
+      <span className="dot on"/>
+      <div className="screen-name"><b>{d.name}</b><small>{d.model}</small></div>
+      <button onClick={close} title="Fechar tela"><X/></button>
+    </header>
+    <div className="display direct-display">
+      <iframe
+        src={src}
+        title={'Controle de '+d.name}
+        allow="clipboard-read; clipboard-write; fullscreen"
+        referrerPolicy="no-referrer"
+      />
+    </div>
+    <footer>
+      <span className="embed-note">H.264 • 30 FPS • controle direto</span>
+      <button onClick={close}><X/>Fechar</button>
+    </footer>
+  </article>
 }
 function Auth({message,done}:{message:string;done:()=>void}){const[mode,setMode]=useState<'login'|'register'>('login'),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);const submit=async(e:React.FormEvent<HTMLFormElement>)=>{e.preventDefault();setBusy(true);try{const r=await fetch('/api/auth/'+mode,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});const d=await r.json();if(!r.ok)throw new Error(d.error);if(d.needsConfirmation){setNotice('Conta criada. Confirme seu e-mail e depois entre.');setMode('login')}else await done()}catch(e){setNotice((e as Error).message)}finally{setBusy(false)}};return <section className="auth"><ShieldCheck size={30}/><h2>Entre no NuCel</h2><p>{message}</p><div className="auth-tabs"><button className={mode==='login'?'active':''} onClick={()=>setMode('login')}>Entrar</button><button className={mode==='register'?'active':''} onClick={()=>setMode('register')}>Criar conta</button></div><form onSubmit={submit}>{mode==='register'&&<Field name="name" label="Nome" placeholder="Seu nome"/>}<Field name="email" label="E-mail" type="email" placeholder="voce@empresa.com"/><Field name="password" label="Senha" type="password" placeholder="Sua senha"/>{notice&&<div className="notice">{notice}</div>}<button className="primary" disabled={busy}>{busy?'Aguarde…':mode==='login'?'Entrar':'Criar conta'}</button></form></section>}
 function Field({name,label,placeholder,type='text'}:{name:string;label:string;placeholder:string;type?:string}){return <label>{label}<input name={name} type={type} placeholder={placeholder} required minLength={type==='password'?8:undefined}/></label>}

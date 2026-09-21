@@ -7,6 +7,30 @@ function result(data: unknown, status = 200) {
   return Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 }
 
+function sameOrigin(req: Request) {
+  const origin = req.headers.get('origin');
+  if (!origin) return false;
+
+  const requestOrigin = new URL(req.url).origin;
+  if (origin === requestOrigin) return true;
+
+  if (process.env.NODE_ENV !== 'production') {
+    try {
+      const a = new URL(origin);
+      const b = new URL(requestOrigin);
+      const local = (host: string) => host === 'localhost' || host === '127.0.0.1';
+      return local(a.hostname) &&
+        local(b.hostname) &&
+        a.protocol === b.protocol &&
+        a.port === b.port;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
 function failure(error: unknown) {
   const message = error instanceof Error ? error.message : '';
   if (message === 'UNAUTHENTICATED') return result({ error: 'Entre na sua conta NuCel para continuar.', code: 'UNAUTHENTICATED' }, 401);
@@ -58,7 +82,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    if (req.headers.get('origin') !== new URL(req.url).origin) return result({ error: 'Origem inválida.' }, 403);
+    if (!sameOrigin(req)) return result({ error: 'Origem inválida.' }, 403);
     const me = await identity();
     if (me.role !== 'admin') throw new Error('FORBIDDEN');
     const body = await req.json() as Record<string, unknown>;

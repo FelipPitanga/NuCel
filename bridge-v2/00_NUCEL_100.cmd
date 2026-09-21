@@ -28,10 +28,9 @@ git pull origin nucel-bridge-v2
 if errorlevel 1 goto :fail
 
 echo [2/6] Encerrando processos antigos do NuCel...
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$ports=8000,8001; foreach($port in $ports){Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue ^| ForEach-Object {try{Stop-Process -Id $_.OwningProcess -Force -ErrorAction Stop}catch{}}}; Get-CimInstance Win32_Process -Filter ""Name='cloudflared.exe'"" -ErrorAction SilentlyContinue ^| Where-Object {$_.CommandLine -match '127\.0\.0\.1:8000'} ^| ForEach-Object {try{Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop}catch{}}"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%BRIDGE%99_LIMPAR_NUCEL.ps1"
+if errorlevel 1 goto :fail
 
-timeout /t 2 /nobreak >nul
 del /q "%READY%" >nul 2>nul
 del /q "%PROGRAMDATA%\WsScrcpyWeb\.restart" >nul 2>nul
 

@@ -47,8 +47,8 @@
   padding:16px 0 0
 }
 .screen{
-  width:250px;
-  max-width:250px;
+  width:310px;
+  max-width:310px;
   justify-self:auto;
   background:#fff;
   border:1px solid var(--line);
@@ -66,7 +66,7 @@
 .screen-name small{color:#918799}
 .direct-display{
   width:100%;
-  height:535px;
+  height:560px;
   aspect-ratio:auto;
   background:#050406;
   overflow:hidden
@@ -87,6 +87,6 @@
 .embed-note{color:#8e8497}
 @media(max-width:600px){
   .screens{justify-content:center}
-  .screen,.screen-direct{width:min(250px,100%);max-width:250px}
-  .direct-display{height:min(535px,72vh)}
+  .screen,.screen-direct{width:min(310px,100%);max-width:310px}
+  .direct-display{height:min(560px,72vh)}
 }

@@ -10,49 +10,45 @@ set "CLOUDFLARED=C:\Program Files (x86)\cloudflared\cloudflared.exe"
 
 echo.
 echo ===============================================
-echo       NuCel Bridge v2 - 3 TELAS
+echo       NuCel - OPERACAO LOCAL
 echo ===============================================
 echo.
 
 if not exist "%ENGINE%\package.json" (
-  echo [ERRO] Motor nao encontrado em:
-  echo %ENGINE%
-  echo Rode 01_INICIAR_LOCAL.cmd uma vez para instalar o motor.
-  pause
-  exit /b 1
-)
-
-if not exist "%CONFIG%" (
-  echo [ERRO] Configuracao nao encontrada:
-  echo %CONFIG%
+  echo [ERRO] Motor nao encontrado.
+  echo Rode 01_INICIAR_LOCAL.cmd uma vez.
   pause
   exit /b 1
 )
 
 echo Abrindo exatamente 3 janelas:
 echo   [1] NUCEL ENGINE
-echo   [2] NUCEL TUNEL
-echo   [3] NUCEL DIRECT LAB
+echo   [2] NUCEL DASHBOARD
+echo   [3] NUCEL TUNEL
 echo.
 
-REM Remove qualquer patch antigo de coordenadas antes do build.
 git -C "%ENGINE%" checkout -- src/app/interactionHandler/InteractionHandler.ts >nul 2>nul
 
 start "1 - NUCEL ENGINE" cmd /k "title 1 - NUCEL ENGINE && cd /d ""%ROOT%"" && 01_ENGINE_DIRETO.cmd"
 
 timeout /t 2 /nobreak >nul
 
+start "2 - NUCEL DASHBOARD" cmd /k "title 2 - NUCEL DASHBOARD && cd /d ""%ROOT%"" && 03_NUCEL_DASHBOARD.cmd"
+
+timeout /t 2 /nobreak >nul
+
 if exist "%CLOUDFLARED%" (
-  start "2 - NUCEL TUNEL" cmd /k "title 2 - NUCEL TUNEL && ""%CLOUDFLARED%"" tunnel --url http://127.0.0.1:8000"
+  start "3 - NUCEL TUNEL" cmd /k "title 3 - NUCEL TUNEL && ""%CLOUDFLARED%"" tunnel --url http://127.0.0.1:8000"
 ) else (
-  start "2 - NUCEL TUNEL" cmd /k "title 2 - NUCEL TUNEL && cloudflared tunnel --url http://127.0.0.1:8000"
+  start "3 - NUCEL TUNEL" cmd /k "title 3 - NUCEL TUNEL && cloudflared tunnel --url http://127.0.0.1:8000"
 )
 
-start "3 - NUCEL DIRECT LAB" cmd /k "title 3 - NUCEL DIRECT LAB && cd /d ""%ROOT%"" && 03_DIRECT_LAB.cmd"
-
 echo.
-echo [OK] As 3 janelas foram abertas.
-echo Nao abra nenhum outro CMD.
+echo [OK] Tudo iniciado.
 echo.
-timeout /t 3 /nobreak >nul
+echo Use apenas:
+echo   http://localhost:3000
+echo.
+echo O Direct Lab nao e mais necessario.
+timeout /t 4 /nobreak >nul
 exit

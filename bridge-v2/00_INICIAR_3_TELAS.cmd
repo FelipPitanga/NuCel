@@ -38,9 +38,9 @@ start "2 - NUCEL DASHBOARD" cmd /k "title 2 - NUCEL DASHBOARD && cd /d ""%ROOT%"
 timeout /t 2 /nobreak >nul
 
 if exist "%CLOUDFLARED%" (
-  start "3 - NUCEL TUNEL" cmd /k "title 3 - NUCEL TUNEL && ""%CLOUDFLARED%"" tunnel --url http://127.0.0.1:8000"
+  start "3 - NUCEL TUNEL" "%ComSpec%" /k ""%CLOUDFLARED%" tunnel --url http://127.0.0.1:8000"
 ) else (
-  start "3 - NUCEL TUNEL" cmd /k "title 3 - NUCEL TUNEL && cloudflared tunnel --url http://127.0.0.1:8000"
+  start "3 - NUCEL TUNEL" "%ComSpec%" /k "cloudflared tunnel --url http://127.0.0.1:8000"
 )
 
 echo.

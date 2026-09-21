@@ -91,7 +91,6 @@ function Phone({d,c,close}:{d:Device;c:Connection;close:()=>void}){
     device:d.serial,
     codec:'h264',
     maxFps:'30',
-    maxSize:'720',
     audio:'false',
     keyboard:'true',
   });

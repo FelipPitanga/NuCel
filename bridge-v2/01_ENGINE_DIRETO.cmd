@@ -16,6 +16,16 @@ if not exist "%ENGINE%\package.json" (
 
 if exist "C:\Program Files\nodejs\node.exe" set "PATH=C:\Program Files\nodejs;%PATH%"
 
+for /f "tokens=5" %%P in ('netstat -ano ^| findstr LISTENING ^| findstr ":8000"') do (
+  echo.
+  echo [ERRO] A porta 8000 ja esta em uso pelo PID %%P.
+  echo Feche o ENGINE antigo antes de iniciar outro.
+  echo O NuCel precisa obrigatoriamente usar a porta 8000.
+  echo.
+  pause
+  exit /b 1
+)
+
 set "WS_SCRCPY_CONFIG=%CONFIG%"
 cd /d "%ENGINE%"
 

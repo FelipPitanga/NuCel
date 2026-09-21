@@ -22,10 +22,17 @@ if errorlevel 1 (
 
 where node >nul 2>nul
 if errorlevel 1 (
-  echo [ERRO] Node.js nao encontrado.
-  echo O motor exige Node.js 24 ou superior.
-  pause
-  exit /b 1
+  if exist "C:\Program Files\nodejs\node.exe" (
+    set "PATH=C:\Program Files\nodejs;%PATH%"
+  ) else if exist "%LOCALAPPDATA%\Programs\nodejs\node.exe" (
+    set "PATH=%LOCALAPPDATA%\Programs\nodejs;%PATH%"
+  ) else (
+    echo [ERRO] Node.js nao encontrado.
+    echo O motor exige Node.js 24 ou superior.
+    echo Feche todas as janelas do Windows Terminal e abra uma nova.
+    pause
+    exit /b 1
+  )
 )
 
 for /f "tokens=1 delims=." %%V in ('node -p "process.versions.node"') do set "NODE_MAJOR=%%V"

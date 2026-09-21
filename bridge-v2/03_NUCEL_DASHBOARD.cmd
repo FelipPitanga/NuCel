@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableExtensions EnableDelayedExpansion
+setlocal EnableExtensions
 title 2 - NUCEL DASHBOARD
 
 set "ROOT=%~dp0.."
@@ -12,39 +12,47 @@ echo ===============================================
 echo       NuCel Dashboard - LOCAL
 echo ===============================================
 echo.
-echo Iniciando Next.js em http://localhost:3000
+
+where node >nul 2>nul
+if errorlevel 1 (
+  echo [ERRO] Node.js nao encontrado.
+  pause
+  exit /b 1
+)
+
+echo Node:
+node --version
+echo NPM:
+call npm --version
 echo.
 
-start "NuCel Next Dev" /b cmd /c "npm run dev"
+if not exist "node_modules" (
+  echo [1/2] Instalando dependencias do NuCel...
+  call npm install
+  if errorlevel 1 goto :fail
+) else (
+  echo [1/2] Dependencias ja instaladas.
+)
 
-set /a COUNT=0
-:wait
-set /a COUNT+=1
-curl.exe -s -o nul --max-time 2 http://127.0.0.1:3000 >nul 2>nul
-if not errorlevel 1 goto :ready
-if !COUNT! GEQ 120 goto :timeout
-<nul set /p "=."
-timeout /t 1 /nobreak >nul
-goto :wait
-
-:ready
+echo [2/2] Iniciando dashboard em http://127.0.0.1:3000
 echo.
-echo.
-echo [OK] Dashboard pronto.
-echo Abrindo http://localhost:3000
-start "" "http://localhost:3000"
-echo.
-echo Deixe esta janela aberta durante o teste.
-echo Pressione Ctrl+C apenas quando quiser parar o dashboard.
+echo Esta janela agora E o servidor do dashboard.
+echo Se houver erro, ele aparecera aqui.
 echo.
 
-:hold
-timeout /t 3600 /nobreak >nul
-goto :hold
+REM Abre o navegador alguns segundos depois, sem esconder o processo principal.
+start "" cmd /c "timeout /t 8 /nobreak >nul && start """" http://127.0.0.1:3000"
 
-:timeout
+call npm run dev -- -H 127.0.0.1 -p 3000
+if errorlevel 1 goto :fail
+exit /b 0
+
+:fail
 echo.
-echo [ERRO] Dashboard nao respondeu na porta 3000.
-echo Confira os erros acima do npm run dev.
+echo ===============================================
+echo [ERRO] O dashboard NuCel parou.
+echo ===============================================
+echo.
+echo Mande uma foto das ultimas linhas desta janela.
 pause
 exit /b 1

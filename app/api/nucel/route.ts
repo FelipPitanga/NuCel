@@ -106,6 +106,27 @@ export async function POST(req: Request) {
       return result({ id, secret });
     }
 
+    if (body.action === 'updateBridgeUrl') {
+      const url = new URL(str('url', 500));
+      if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
+        throw new Error('VALID:Use um endereço HTTPS válido do conector.');
+      }
+      const bridgeName = typeof body.bridgeName === 'string' && body.bridgeName.trim()
+        ? body.bridgeName.trim()
+        : 'PC Principal';
+      const bridges = await adminRest<Bridge[]>(query('nucel_bridges', {
+        select: 'id,name,url,secret',
+        name: `eq.${bridgeName}`,
+        limit: '1',
+      }));
+      if (!bridges[0]) throw new Error('VALID:Conexão do computador não encontrada.');
+      await adminRest(query('nucel_bridges', { id: `eq.${bridges[0].id}` }), {
+        method: 'PATCH',
+        body: JSON.stringify({ url: url.origin }),
+      });
+      return result({ ok: true, url: url.origin });
+    }
+
     if (body.action === 'device') {
       const serial = str('serial');
       if (!/^[\w.:-]+$/.test(serial)) throw new Error('VALID:Número de série inválido.');

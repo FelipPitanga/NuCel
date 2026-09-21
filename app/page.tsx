@@ -37,7 +37,7 @@ export default function Home(){
       setData(d);setCode('');setMessage('');
     }catch(e){setData(null);setMessage((e as Error).message)}
   },[]);
-  useEffect(()=>{refresh();const t=setInterval(refresh,30000);return()=>clearInterval(t)},[refresh]);
+  useEffect(()=>{refresh()},[refresh]);
   useEffect(()=>{
     if(!data)return;
     const next:Record<string,string>={};

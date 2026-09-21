@@ -48,7 +48,13 @@ body{display:flex;align-items:center;justify-content:center}
   }
 
   try{
+    const secure=location.protocol==='https:';
+    const port=location.port?Number.parseInt(location.port,10):(secure?443:80);
+
     window.__nucelHandle=window.WsScrcpy.startStream(stream,device,{
+      host:location.hostname,
+      port:port,
+      secure:secure,
       codec:'h264',
       maxFps:30,
       audio:false,

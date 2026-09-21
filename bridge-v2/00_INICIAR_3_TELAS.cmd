@@ -37,7 +37,7 @@ echo.
 
 git -C "%ENGINE%" checkout -- src/app/interactionHandler/InteractionHandler.ts >nul 2>nul
 
-start "1 - NUCEL ENGINE" cmd /k "title 1 - NUCEL ENGINE && set ""WS_SCRCPY_CONFIG=%CONFIG%"" && cd /d ""%ENGINE%"" && npm start"
+start "1 - NUCEL ENGINE" cmd /k "title 1 - NUCEL ENGINE && cd /d ""%ROOT%"" && 01_ENGINE_DIRETO.cmd" && npm start"
 
 timeout /t 3 /nobreak >nul
 

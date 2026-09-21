@@ -2,6 +2,8 @@
   "webPort": 8000,
   "frameAncestors": [
     "http://localhost:5159",
-    "https://nucel.nuvixgestao.workers.dev"
+    "https://nucel.nuvixgestao.workers.dev",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000"
   ]
 }

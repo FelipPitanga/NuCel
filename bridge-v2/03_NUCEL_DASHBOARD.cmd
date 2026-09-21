@@ -13,6 +13,16 @@ echo       NuCel Dashboard - LOCAL
 echo ===============================================
 echo.
 
+if not exist "%ROOT%\.env.local" (
+  echo [ERRO] O arquivo .env.local ainda nao existe.
+  echo.
+  echo Rode primeiro:
+  echo   bridge-v2\98_CONFIGURAR_ENV_LOCAL.cmd
+  echo.
+  pause
+  exit /b 1
+)
+
 where node >nul 2>nul
 if errorlevel 1 (
   echo [ERRO] Node.js nao encontrado.

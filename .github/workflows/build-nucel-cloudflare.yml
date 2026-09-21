@@ -11,10 +11,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
-      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-      NUCEL_OWNER_EMAIL: ${{ secrets.NUCEL_OWNER_EMAIL }}
+      # Build-only placeholders. Real values stay in Cloudflare runtime vars/secrets.
+      SUPABASE_URL: https://example.supabase.co
+      SUPABASE_PUBLISHABLE_KEY: sb_publishable_build_placeholder
+      SUPABASE_SECRET_KEY: sb_secret_build_placeholder
+      NUCEL_OWNER_EMAIL: build@example.com
 
     steps:
       - name: Checkout

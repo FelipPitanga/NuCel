@@ -30,7 +30,11 @@ if not exist "node_modules" (
   if errorlevel 1 goto :fail
 )
 
-echo [2/3] Build Cloudflare...
+echo [2/3] Limpando builds antigos...
+if exist ".next" rmdir /s /q ".next"
+if exist ".open-next" rmdir /s /q ".open-next"
+
+echo [2/3] Build Cloudflare com Webpack...
 call npx opennextjs-cloudflare build
 if errorlevel 1 goto :fail
 

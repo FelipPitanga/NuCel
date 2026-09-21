@@ -27,6 +27,7 @@ for /f "tokens=5" %%P in ('netstat -ano ^| findstr LISTENING ^| findstr ":8000"'
 )
 
 set "WS_SCRCPY_CONFIG=%CONFIG%"
+set "WS_SCRCPY_NO_BROWSER=1"
 cd /d "%ENGINE%"
 
 echo.
@@ -36,6 +37,10 @@ echo ===============================================
 echo.
 echo [1/3] Preparando dependencias...
 call npm run stage-seed
+if errorlevel 1 goto :fail
+
+echo [2/3] Aplicando correcao de toque...
+node "%ROOT%\patch-engine-touch.mjs"
 if errorlevel 1 goto :fail
 
 echo [2/3] Preparando HTTPS do Cloudflare Tunnel...

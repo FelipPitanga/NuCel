@@ -49,9 +49,9 @@ set /a COUNT=0
 :wait_tunnel
 set /a COUNT+=1
 if exist "%READY%" goto :tunnel_ready
-if !COUNT! GEQ 60 (
+if !COUNT! GEQ 100 (
   echo.
-  echo [ERRO] O tunnel nao ficou pronto em 60 segundos.
+  echo [ERRO] O tunnel nao ficou pronto em 100 segundos.
   goto :fail
 )
 <nul set /p "=."

@@ -1,6 +1,6 @@
 'use client';
 import {useCallback,useEffect,useState} from 'react';
-import {Check,Copy,Loader2,LogOut,Monitor,Play,Plus,Power,Server,ShieldCheck,Smartphone,Users,Wifi,WifiOff,X} from 'lucide-react';
+import {Check,Copy,Loader2,LogOut,Monitor,Play,Plus,Server,ShieldCheck,Smartphone,Users,Wifi,WifiOff,X} from 'lucide-react';
 import {toast,Toaster} from 'sonner';
 
 type Device={id:string;name:string;model:string;serial:string;bridge_id:string};
@@ -87,22 +87,15 @@ function Devices({data,status,active,setActive,admin,add}:{data:Data;status:Reco
 }
 function Phone({d,c,close}:{d:Device;c:Connection;close:()=>void}){
   const engine=(process.env.NEXT_PUBLIC_NUCEL_BRIDGE_V2_URL||c.url).replace(/\/$/,'');
-  const params=new URLSearchParams({
-    device:d.serial,
-    codec:'h264',
-    maxFps:'30',
-    audio:'false',
-    keyboard:'true',
-  });
-  const src=`${engine}/embed.html?${params.toString()}`;
+  const src=`${engine}/nucel-direct.html?device=${encodeURIComponent(d.serial)}`;
 
-  return <article className="screen screen-embed">
+  return <article className="screen screen-direct">
     <header>
       <span className="dot on"/>
-      <b>{d.name}</b>
-      <button onClick={close}><X/></button>
+      <div className="screen-name"><b>{d.name}</b><small>{d.model}</small></div>
+      <button onClick={close} title="Fechar tela"><X/></button>
     </header>
-    <div className="display embed-display">
+    <div className="display direct-display">
       <iframe
         src={src}
         title={'Controle de '+d.name}
@@ -111,8 +104,8 @@ function Phone({d,c,close}:{d:Device;c:Connection;close:()=>void}){
       />
     </div>
     <footer>
-      <span className="embed-note">scrcpy-web • H.264 • 30 FPS</span>
-      <button onClick={close}><Power/>Desligar</button>
+      <span className="embed-note">H.264 • 30 FPS • controle direto</span>
+      <button onClick={close}><X/>Fechar</button>
     </footer>
   </article>
 }

@@ -116,11 +116,10 @@ Write-Host ('[OK] Quick Tunnel criado: ' + $url) -ForegroundColor Cyan
 try {
     $hostName = ([Uri]$url).Host
     Save-EngineConfig $hostName
-    Sync-Supabase $url
     $utf8 = New-Object System.Text.UTF8Encoding($false)
     [IO.File]::WriteAllText($ReadyPath, $url, $utf8)
 } catch {
-    Write-Host ('[ERRO] Falha ao sincronizar tunnel: ' + $_.Exception.Message) -ForegroundColor Red
+    Write-Host ('[ERRO] Falha ao preparar tunnel: ' + $_.Exception.Message) -ForegroundColor Red
     try { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue } catch {}
     exit 1
 }
@@ -129,7 +128,7 @@ Write-Host ''
 Write-Host '===============================================' -ForegroundColor Green
 Write-Host '[OK] TUNEL SINCRONIZADO AUTOMATICAMENTE' -ForegroundColor Green
 Write-Host $url -ForegroundColor Cyan
-Write-Host 'Config do ENGINE + Supabase atualizados.' -ForegroundColor Green
+Write-Host 'Config do ENGINE atualizado. O NuCel online fara a sincronizacao.' -ForegroundColor Green
 Write-Host 'NAO FECHE ESTA JANELA.' -ForegroundColor Yellow
 Write-Host '===============================================' -ForegroundColor Green
 Write-Host ''

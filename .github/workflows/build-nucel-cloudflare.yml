@@ -1,0 +1,43 @@
+name: Build NuCel Cloudflare
+
+on:
+  push:
+    branches:
+      - nucel-bridge-v2
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      NUCEL_OWNER_EMAIL: ${{ secrets.NUCEL_OWNER_EMAIL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build OpenNext for Cloudflare
+        run: npx opennextjs-cloudflare build
+
+      - name: Package OpenNext output
+        run: tar -czf nucel-open-next.tar.gz .open-next wrangler.jsonc
+
+      - name: Upload deploy artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nucel-open-next
+          path: nucel-open-next.tar.gz
+          retention-days: 3

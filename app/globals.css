@@ -14,3 +14,79 @@
 .direct-display iframe{width:100%;height:100%;border:0;display:block;background:#050406}
 .embed-note{flex:1;padding:0 10px;color:#8f8199;font-size:10px;display:flex;align-items:center}
 @media(max-width:600px){.direct-display{height:min(650px,72vh)}}
+
+/* NuCel workspace compacto - multiaparelhos */
+.workspace{
+  margin-top:26px;
+  background:transparent;
+  border:0;
+  border-radius:0;
+  overflow:visible
+}
+.workspace-title{
+  height:46px;
+  padding:0;
+  background:transparent;
+  color:#4c4357;
+  border-bottom:1px solid var(--line)
+}
+.workspace-title small{color:#948b9b}
+.workspace-empty{
+  min-height:180px;
+  background:#fff;
+  border:1px dashed var(--line);
+  border-radius:14px;
+  margin-top:14px
+}
+.screens{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:flex-start;
+  justify-content:flex-start;
+  gap:16px;
+  padding:16px 0 0
+}
+.screen{
+  width:250px;
+  max-width:250px;
+  justify-self:auto;
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:14px;
+  box-shadow:0 8px 24px rgba(35,24,48,.07);
+  overflow:hidden
+}
+.screen header{
+  height:44px;
+  background:#fff;
+  color:#302738;
+  border-bottom:1px solid var(--line)
+}
+.screen header button{color:#766b80}
+.screen-name small{color:#918799}
+.direct-display{
+  width:100%;
+  height:535px;
+  aspect-ratio:auto;
+  background:#050406;
+  overflow:hidden
+}
+.direct-display iframe{
+  width:100%;
+  height:100%;
+  border:0;
+  display:block;
+  background:#050406
+}
+.screen footer{
+  min-height:40px;
+  background:#fff;
+  border-top:1px solid var(--line)
+}
+.screen footer button{color:#5d5367}
+.embed-note{color:#8e8497}
+@media(max-width:600px){
+  .screens{justify-content:center}
+  .screen,.screen-direct{width:min(250px,100%);max-width:250px}
+  .direct-display{height:min(535px,72vh)}
+}

@@ -28,6 +28,7 @@ export default function Home(){
   const [grants,setGrants]=useState<string[]>([]);
   const [active,setActive]=useState<string[]>([]);
   const [status,setStatus]=useState<Record<string,string>>({});
+  const [bridgeUrlSyncDone,setBridgeUrlSyncDone]=useState(false);
 
   const refresh=useCallback(async()=>{
     try{
@@ -44,6 +45,26 @@ export default function Home(){
     setStatus(next);
   },[data]);
 
+  useEffect(()=>{
+    if(!data || data.me.role!=='admin' || bridgeUrlSyncDone || typeof window==='undefined') return;
+    const params=new URLSearchParams(window.location.search);
+    const bridgeUrl=params.get('bridgeUrl');
+    if(!bridgeUrl) return;
+
+    setBridgeUrlSyncDone(true);
+    request({action:'updateBridgeUrl',url:bridgeUrl,bridgeName:'PC Principal'})
+      .then(async()=>{
+        params.delete('bridgeUrl');
+        const q=params.toString();
+        window.history.replaceState({},'',window.location.pathname+(q?'?'+q:''));
+        await refresh();
+        toast.success('Conexão do computador atualizada.');
+      })
+      .catch(e=>{
+        setBridgeUrlSyncDone(false);
+        toast.error((e as Error).message);
+      });
+  },[data,bridgeUrlSyncDone,refresh]);
 
   const admin=data?.me.role==='admin';
   const save=async(e:React.FormEvent<HTMLFormElement>,action:string)=>{

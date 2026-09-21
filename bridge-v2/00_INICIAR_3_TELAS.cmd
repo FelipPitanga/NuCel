@@ -35,10 +35,7 @@ echo   [2] TUNEL
 echo   [3] EMBED LAB
 echo.
 
-node "%ROOT%\\patch-engine-touch.mjs"
-if errorlevel 1 (
-  echo [AVISO] Patch de coordenadas nao foi aplicado.
-)
+git -C "%ENGINE%" checkout -- src/app/interactionHandler/InteractionHandler.ts >nul 2>nul
 
 start "1 - NUCEL ENGINE" cmd /k "title 1 - NUCEL ENGINE && set ""WS_SCRCPY_CONFIG=%CONFIG%"" && cd /d ""%ENGINE%"" && npm start"
 

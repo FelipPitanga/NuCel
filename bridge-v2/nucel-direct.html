@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NuCel Direct Lab</title>
+<link rel="stylesheet" href="/ws-scrcpy.css">
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:#09070d;color:#f7f2fb;font-family:Arial,sans-serif}
+body{padding:28px}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:22px;margin:0 0 5px}
+p{margin:0 0 20px;color:#a89daf;font-size:13px}
+.card{width:min(390px,100%);border:1px solid #2f2637;background:#100d14;border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.card-head{height:46px;display:flex;align-items:center;gap:9px;padding:0 14px;border-bottom:1px solid #2b2332}
+.dot{width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 12px rgba(34,197,94,.55)}
+.card-head b{font-size:13px}
+.status{margin-left:auto;font-size:10px;color:#9c90a4}
+.stream-shell{height:650px;display:flex;align-items:center;justify-content:center;background:#050406;overflow:hidden;padding:0}
+#stream{width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#stream .device-view{max-width:100%;max-height:100%;width:fit-content;height:fit-content;justify-content:center!important}
+#stream .video{max-width:calc(100% - 52px);max-height:650px}
+#stream .video-layer,#stream .touch-layer{max-width:100%!important;max-height:650px!important;width:auto;height:auto}
+#stream .control-buttons-list{width:52px}
+.card-foot{height:42px;display:flex;align-items:center;padding:0 12px;border-top:1px solid #2b2332;color:#8f8199;font-size:10px}
+.error{color:#fb7185}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>NuCel · Direct Stream Lab</h1>
+  <p>Motor ws-scrcpy renderizado diretamente no card, sem iframe.</p>
+
+  <section class="card">
+    <div class="card-head">
+      <span class="dot"></span>
+      <b>Celular 01 · 0059410259</b>
+      <span class="status" id="status">conectando…</span>
+    </div>
+    <div class="stream-shell">
+      <div id="stream"></div>
+    </div>
+    <div class="card-foot">H.264 · 30 FPS · controle direto</div>
+  </section>
+</div>
+
+<script src="/ws-scrcpy.umd.js"></script>
+<script>
+(function(){
+  const status=document.getElementById('status');
+  const stream=document.getElementById('stream');
+  if(!window.WsScrcpy){
+    status.textContent='biblioteca não carregou';
+    status.classList.add('error');
+    return;
+  }
+  try{
+    window.__nucelHandle=window.WsScrcpy.startStream(stream,'0059410259',{
+      codec:'h264',
+      maxFps:30,
+      audio:false,
+      keyboard:true,
+      deviceKind:'phone',
+      onConnect:function(info){
+        status.textContent=(info.codec||'h264')+' · '+(info.resolution||'conectado');
+      },
+      onDisconnect:function(){
+        status.textContent='desconectado';
+        status.classList.add('error');
+      },
+      onError:function(err){
+        status.textContent='erro: '+err.message;
+        status.classList.add('error');
+      }
+    });
+  }catch(err){
+    status.textContent='erro: '+(err && err.message ? err.message : String(err));
+    status.classList.add('error');
+  }
+})();
+</script>
+</body>
+</html>

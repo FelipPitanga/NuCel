@@ -84,8 +84,8 @@ goto :wait_engine
 echo.
 echo [OK] ENGINE respondendo na porta 8000.
 
-echo [6/6] Abrindo NuCel online...
-start "" "https://nucel.nuvixgestao.workers.dev/"
+echo [6/6] Abrindo NuCel online e sincronizando a conexao...
+start "" "https://nucel.nuvixgestao.workers.dev/?bridgeUrl=!TUNNEL!"
 
 echo.
 echo ===============================================

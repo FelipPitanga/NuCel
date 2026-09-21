@@ -28,6 +28,10 @@ echo [1/3] Preparando dependencias...
 call npm run stage-seed
 if errorlevel 1 goto :fail
 
+echo [2/3] Preparando HTTPS do Cloudflare Tunnel...
+node "%ROOT%\patch-engine-cloudflare-https.mjs"
+if errorlevel 1 goto :fail
+
 echo [2/3] Compilando motor...
 call npm run build
 if errorlevel 1 goto :fail

@@ -45,7 +45,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$current=@(); if($null -ne $j.frameAncestors){$current=@($j.frameAncestors)};" ^
   "$all=@($current + $wanted | Select-Object -Unique);" ^
   "$j | Add-Member -NotePropertyName frameAncestors -NotePropertyValue $all -Force;" ^
-  "$j | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $p -Encoding UTF8"
+  "$json=$j | ConvertTo-Json -Depth 20;" ^
+  "$utf8=New-Object System.Text.UTF8Encoding($false);" ^
+  "[System.IO.File]::WriteAllText($p,$json,$utf8)"
 
 if errorlevel 1 (
   echo.

@@ -60,7 +60,7 @@ body{display:flex;align-items:center;justify-content:center}
 #status.error{color:#fb7185;border:1px solid #fb718555}
 </style>
 </head>
-<body>
+<body tabindex="0">
 <div id="shell">
   <div id="stream"></div>
   <div id="status">conectando…</div>
@@ -75,6 +75,17 @@ body{display:flex;align-items:center;justify-content:center}
   const stream=document.getElementById('stream');
 
   document.title='NuCel · '+device;
+
+  function focusKeyboard(){
+    try{
+      window.focus();
+      document.body.focus({preventScroll:true});
+    }catch{}
+  }
+
+  document.addEventListener('pointerdown',focusKeyboard,true);
+  document.addEventListener('mousedown',focusKeyboard,true);
+  document.addEventListener('touchstart',focusKeyboard,{capture:true,passive:true});
 
   function fail(message){
     status.textContent=message;
@@ -102,6 +113,7 @@ body{display:flex;align-items:center;justify-content:center}
       deviceKind:'phone',
       onConnect:function(){
         status.classList.add('hidden');
+        focusKeyboard();
       },
       onDisconnect:function(){
         fail('aparelho desconectado');

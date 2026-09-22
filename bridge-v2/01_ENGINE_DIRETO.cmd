@@ -47,6 +47,10 @@ echo [2/3] Preparando HTTPS do Cloudflare Tunnel...
 node "%ROOT%\patch-engine-cloudflare-https.mjs"
 if errorlevel 1 goto :fail
 
+echo [2/3] Aplicando qualidade HD do NuCel...
+node "%ROOT%\patch-engine-quality.mjs"
+if errorlevel 1 goto :fail
+
 echo [2/3] Compilando motor...
 call npm run build
 if errorlevel 1 goto :fail

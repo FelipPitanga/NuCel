@@ -1,7 +1,11 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 set "NUCEL_HIDDEN=0"
-if /I "%~1"=="--hidden" set "NUCEL_HIDDEN=1"
+set "NUCEL_NO_BROWSER=0"
+for %%A in (%*) do (
+  if /I "%%~A"=="--hidden" set "NUCEL_HIDDEN=1"
+  if /I "%%~A"=="--no-browser" set "NUCEL_NO_BROWSER=1"
+)
 title NuCel - START LIMPO
 
 set "BRIDGE=%~dp0"
@@ -95,8 +99,12 @@ goto :wait_engine
 echo.
 echo [OK] ENGINE respondendo na porta 8000.
 
-echo [6/6] Abrindo NuCel online e sincronizando a conexao...
-start "" "https://nucel.nuvixgestao.workers.dev/?bridgeUrl=!TUNNEL!"
+echo [6/6] Sincronizando conexao do NuCel...
+if "%NUCEL_NO_BROWSER%"=="1" (
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -UseBasicParsing -Uri 'https://nucel.nuvixgestao.workers.dev/?bridgeUrl=!TUNNEL!' -TimeoutSec 10 | Out-Null } catch {}" >nul 2>nul
+) else (
+  start "" "https://nucel.nuvixgestao.workers.dev/?bridgeUrl=!TUNNEL!"
+)
 
 echo.
 echo ===============================================

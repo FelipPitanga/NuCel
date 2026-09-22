@@ -39,8 +39,9 @@ function Test-Tunnel {
 function Show-Status {
     $engine = Test-Engine
     $tunnelProc = ((Get-TunnelProcess).Count -gt 0)
-    $tunnel = Test-Tunnel
     $url = Get-TunnelUrl
+    $tunnel = ($tunnelProc -and [bool]$url)
+    $publicCheck = Test-Tunnel
 
     Write-Host ''
     Write-Host '===============================================' -ForegroundColor DarkGray
@@ -48,7 +49,8 @@ function Show-Status {
     Write-Host '===============================================' -ForegroundColor DarkGray
     if ($engine) { Write-Host ' ENGINE     ONLINE' -ForegroundColor Green } else { Write-Host ' ENGINE     OFFLINE' -ForegroundColor Red }
     if ($tunnelProc) { Write-Host ' TUNEL      PROCESSO ATIVO' -ForegroundColor Green } else { Write-Host ' TUNEL      OFFLINE' -ForegroundColor Red }
-    if ($tunnel) { Write-Host ' INTERNET   ONLINE' -ForegroundColor Green } else { Write-Host ' INTERNET   OFFLINE/INACESSIVEL' -ForegroundColor Red }
+    if ($tunnel) { Write-Host ' TUNEL URL  PRONTA' -ForegroundColor Green } else { Write-Host ' TUNEL URL  INDISPONIVEL' -ForegroundColor Red }
+    if ($publicCheck) { Write-Host ' PUBLICO    RESPONDENDO' -ForegroundColor Green } else { Write-Host ' PUBLICO    NAO VALIDADO' -ForegroundColor Yellow }
     if ($url) { Write-Host (' URL        ' + $url) -ForegroundColor Cyan }
     Write-Host '===============================================' -ForegroundColor DarkGray
 
@@ -88,7 +90,9 @@ switch ($action.ToLowerInvariant()) {
     }
 
     default {
-        if ((Test-Engine) -and (Test-Tunnel)) {
+        $bootUrl = Get-TunnelUrl
+        $bootTunnel = ((Get-TunnelProcess).Count -gt 0) -and [bool]$bootUrl
+        if ((Test-Engine) -and $bootTunnel) {
             Write-Host ''
             Write-Host '[NuCel] Ja esta ONLINE.' -ForegroundColor Green
             Write-Host 'Use: nucel status' -ForegroundColor DarkGray
@@ -108,7 +112,9 @@ switch ($action.ToLowerInvariant()) {
         while ((Get-Date) -lt $deadline) {
             Start-Sleep -Seconds 2
             $dots++
-            if ((Test-Engine) -and (Test-Tunnel)) {
+            $loopUrl = Get-TunnelUrl
+            $loopTunnel = ((Get-TunnelProcess).Count -gt 0) -and [bool]$loopUrl
+            if ((Test-Engine) -and $loopTunnel) {
                 Write-Host ''
                 Write-Host ''
                 Write-Host '===============================================' -ForegroundColor Green
@@ -126,8 +132,14 @@ switch ($action.ToLowerInvariant()) {
         Write-Host ''
         Write-Host ''
         Write-Host '[NuCel] Nao ficou ONLINE dentro do tempo esperado.' -ForegroundColor Red
+        Write-Host ''
+        [void](Show-Status)
         Write-Host ('Log: ' + $StartLog) -ForegroundColor Yellow
-        Write-Host 'Rode: nucel status' -ForegroundColor DarkGray
+        if (Test-Path $StartLog) {
+            Write-Host ''
+            Write-Host 'Ultimas linhas do log:' -ForegroundColor Yellow
+            Get-Content -LiteralPath $StartLog -Tail 18 | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
+        }
         exit 1
     }
 }

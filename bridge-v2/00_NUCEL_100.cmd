@@ -24,6 +24,7 @@ echo.
 cd /d "%ROOT%"
 
 echo [1/6] Atualizando codigo...
+git restore -- "bridge-v2/engine-config.json" >nul 2>nul
 git switch nucel-bridge-v2
 if errorlevel 1 goto :fail
 git pull origin nucel-bridge-v2

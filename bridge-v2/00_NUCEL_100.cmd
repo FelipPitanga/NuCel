@@ -99,9 +99,9 @@ goto :wait_engine
 echo.
 echo [OK] ENGINE respondendo na porta 8000.
 
-echo [6/6] Sincronizando conexao do NuCel...
+echo [6/6] Finalizando inicializacao...
 if "%NUCEL_NO_BROWSER%"=="1" (
-  powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -UseBasicParsing -Uri 'https://nucel.nuvixgestao.workers.dev/?bridgeUrl=!TUNNEL!' -TimeoutSec 10 | Out-Null } catch {}" >nul 2>nul
+  echo [OK] Navegador nao sera aberto. Use: nucel open
 ) else (
   start "" "https://nucel.nuvixgestao.workers.dev/?bridgeUrl=!TUNNEL!"
 )

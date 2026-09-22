@@ -85,7 +85,13 @@ switch ($action.ToLowerInvariant()) {
     }
 
     'open' {
-        Start-Process 'https://nucel.nuvixgestao.workers.dev/'
+        $url = Get-TunnelUrl
+        if ($url) {
+            $encoded = [Uri]::EscapeDataString($url)
+            Start-Process ('https://nucel.nuvixgestao.workers.dev/?bridgeUrl=' + $encoded)
+        } else {
+            Start-Process 'https://nucel.nuvixgestao.workers.dev/'
+        }
         exit 0
     }
 
@@ -104,7 +110,7 @@ switch ($action.ToLowerInvariant()) {
         Write-Host '[NuCel] Iniciando em segundo plano...' -ForegroundColor Cyan
         Write-Host '[NuCel] Atualizando e preparando ENGINE + TUNEL.' -ForegroundColor DarkGray
 
-        $cmdArgs = '/d /c ""' + $StartCmd + '" --hidden >> "' + $StartLog + '" 2>&1"'
+        $cmdArgs = '/d /c ""' + $StartCmd + '" --hidden --no-browser >> "' + $StartLog + '" 2>&1"'
         Start-Process -FilePath $env:ComSpec -ArgumentList $cmdArgs -WorkingDirectory $BridgeDir -WindowStyle Hidden | Out-Null
 
         $deadline = (Get-Date).AddMinutes(4)

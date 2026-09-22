@@ -98,36 +98,121 @@ body{display:flex;align-items:center;justify-content:center}
     return;
   }
 
-  try{
-    const secure=location.protocol==='https:';
-    const port=location.port?Number.parseInt(location.port,10):(secure?443:80);
+  const secure=location.protocol==='https:';
+  const port=location.port?Number.parseInt(location.port,10):(secure?443:80);
 
-    window.__nucelHandle=window.WsScrcpy.startStream(stream,device,{
-      host:location.hostname,
-      port:port,
-      secure:secure,
-      codec:'h264',
-      maxFps:30,
-      audio:false,
-      keyboard:true,
-      deviceKind:'phone',
-      onConnect:function(){
-        status.classList.add('hidden');
-        focusKeyboard();
-      },
-      onDisconnect:function(){
-        fail('aparelho desconectado');
-      },
-      onError:function(err){
-        fail('erro: '+(err&&err.message?err.message:String(err)));
-      }
-    });
-  }catch(err){
-    fail('erro: '+(err&&err.message?err.message:String(err)));
+  let handle=null;
+  let reconnectTimer=null;
+  let reconnectAttempt=0;
+  let connectStartedAt=0;
+  let stopped=false;
+  let generation=0;
+
+  function showStatus(message,isError){
+    status.textContent=message;
+    status.classList.remove('hidden');
+    status.classList.toggle('error',!!isError);
   }
 
+  function cleanupHandle(){
+    const old=handle;
+    handle=null;
+    window.__nucelHandle=null;
+    try{old&&old.stop()}catch{}
+    try{stream.removeAttribute('data-ws-scrcpy-active')}catch{}
+    try{stream.querySelectorAll('.device-view').forEach(function(el){el.remove()})}catch{}
+  }
+
+  function scheduleReconnect(reason){
+    if(stopped||reconnectTimer)return;
+    reconnectAttempt+=1;
+    const delay=Math.min(5000,750*Math.pow(2,Math.min(reconnectAttempt-1,3)));
+    console.warn('[NuCel] stream caiu:',reason||'sem motivo','- nova tentativa em',delay,'ms');
+    showStatus('reconectando…',false);
+    reconnectTimer=setTimeout(function(){
+      reconnectTimer=null;
+      connect();
+    },delay);
+  }
+
+  function connect(){
+    if(stopped)return;
+
+    if(reconnectTimer){
+      clearTimeout(reconnectTimer);
+      reconnectTimer=null;
+    }
+
+    const myGeneration=++generation;
+    cleanupHandle();
+    connectStartedAt=Date.now();
+    showStatus(reconnectAttempt?'reconectando…':'conectando…',false);
+
+    try{
+      handle=window.WsScrcpy.startStream(stream,device,{
+        host:location.hostname,
+        port:port,
+        secure:secure,
+        codec:'h264',
+        maxFps:30,
+        audio:false,
+        keyboard:true,
+        deviceKind:'phone',
+        onConnect:function(){
+          if(stopped||myGeneration!==generation)return;
+          if(reconnectTimer){
+            clearTimeout(reconnectTimer);
+            reconnectTimer=null;
+          }
+          reconnectAttempt=0;
+          status.classList.add('hidden');
+          status.classList.remove('error');
+          focusKeyboard();
+          console.info('[NuCel] stream conectado:',device);
+        },
+        onDisconnect:function(reason){
+          if(stopped||myGeneration!==generation)return;
+          scheduleReconnect(reason||'websocket desconectado');
+        },
+        onError:function(err){
+          if(stopped||myGeneration!==generation)return;
+          scheduleReconnect(err&&err.message?err.message:String(err));
+        }
+      });
+      window.__nucelHandle=handle;
+    }catch(err){
+      if(myGeneration!==generation)return;
+      scheduleReconnect(err&&err.message?err.message:String(err));
+    }
+  }
+
+  const watchdog=setInterval(function(){
+    if(stopped||reconnectTimer)return;
+    if(handle&&!handle.isConnected&&Date.now()-connectStartedAt>20000){
+      scheduleReconnect('conexão travada por mais de 20s');
+    }
+  },5000);
+
+  window.addEventListener('online',function(){
+    if(!stopped&&handle&&!handle.isConnected&&!reconnectTimer){
+      scheduleReconnect('rede voltou');
+    }
+  });
+
+  document.addEventListener('visibilitychange',function(){
+    if(!document.hidden&&!stopped&&handle&&!handle.isConnected&&!reconnectTimer){
+      scheduleReconnect('aba voltou ao foco');
+    }
+  });
+
+  connect();
+
   window.addEventListener('beforeunload',function(){
-    try{window.__nucelHandle&&window.__nucelHandle.stop()}catch{}
+    stopped=true;
+    generation+=1;
+    if(reconnectTimer)clearTimeout(reconnectTimer);
+    clearInterval(watchdog);
+    cleanupHandle();
   });
 })();
 </script>

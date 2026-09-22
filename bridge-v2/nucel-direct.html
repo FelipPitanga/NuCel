@@ -7,41 +7,58 @@
 <link rel="stylesheet" href="/ws-scrcpy.css">
 <style>
 *{box-sizing:border-box}
-html,body{margin:0;width:100%;height:100%;background:#050406;color:#f7f2fb;font-family:Arial,sans-serif;overflow:hidden}
-body{display:flex;align-items:center;justify-content:center}
-#shell{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#050406;overflow:hidden}
-#stream{width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
+html,body{margin:0;width:100%;height:100%;background:transparent;color:#f7f2fb;font-family:Arial,sans-serif;overflow:hidden}
+body{display:flex;align-items:stretch;justify-content:center}
+#shell{width:100%;height:100%;display:flex;align-items:stretch;justify-content:center;background:transparent;overflow:hidden}
+#stream{width:100%;height:100%;display:flex;align-items:stretch;justify-content:center;background:transparent;overflow:hidden}
 #stream .device-view{
   width:100%;
   height:100%;
   max-width:100%;
   max-height:100%;
+  display:flex!important;
+  flex-direction:row;
   align-items:stretch;
   justify-content:center!important;
+  background:transparent!important;
   overflow:hidden
 }
 #stream .video{
-  height:100%;
-  width:auto;
-  max-width:calc(100% - 44px);
-  max-height:100%;
-  place-items:center
+  flex:1 1 auto;
+  width:calc(100% - 44px)!important;
+  height:100%!important;
+  min-width:0;
+  min-height:0;
+  max-width:calc(100% - 44px)!important;
+  max-height:100%!important;
+  display:grid!important;
+  place-items:stretch!important;
+  background:transparent!important;
+  overflow:hidden
 }
 #stream .video-layer,#stream .touch-layer{
+  grid-area:1/1!important;
+  width:100%!important;
   height:100%!important;
-  width:auto!important;
-  max-width:100%!important;
-  max-height:100%!important
+  max-width:none!important;
+  max-height:none!important;
+  display:block!important;
+  object-fit:fill!important;
+  image-rendering:auto!important;
+  transform:none!important;
+  backface-visibility:hidden
 }
 #stream .control-buttons-list{
+  flex:0 0 44px!important;
   width:44px!important;
-  height:100%;
-  max-height:100%;
+  height:100%!important;
+  max-height:100%!important;
   overflow:hidden!important;
   display:flex!important;
   flex-direction:column;
   justify-content:space-evenly;
-  padding:3px 0
+  padding:3px 0;
+  margin:0!important
 }
 #stream .control-button,
 #stream .control-wrapper>label.control-button{
@@ -51,10 +68,7 @@ body{display:flex;align-items:center;justify-content:center}
   margin:0 auto!important;
   flex:0 0 28px
 }
-#stream .control-button>svg{
-  width:100%!important;
-  height:100%!important
-}
+#stream .control-button>svg{width:100%!important;height:100%!important}
 #status{position:absolute;z-index:20;left:50%;top:50%;transform:translate(-50%,-50%);padding:8px 12px;border-radius:9px;background:#17131fcc;color:#ad9bb9;font-size:11px;white-space:nowrap}
 #status.hidden{display:none}
 #status.error{color:#fb7185;border:1px solid #fb718555}
@@ -107,6 +121,31 @@ body{display:flex;align-items:center;justify-content:center}
   let connectStartedAt=0;
   let stopped=false;
   let generation=0;
+  let lastReportedSize='';
+
+  const parentOrigin=(()=>{
+    try{return document.referrer?new URL(document.referrer).origin:'*'}catch{return'*'}
+  })();
+
+  function reportStreamSize(){
+    const canvas=stream.querySelector('.video-layer');
+    if(!canvas)return;
+    const width=Number(canvas.width)||0;
+    const height=Number(canvas.height)||0;
+    if(width<100||height<100)return;
+    const key=width+'x'+height;
+    if(key===lastReportedSize)return;
+    lastReportedSize=key;
+    try{
+      window.parent.postMessage({
+        type:'nucel:stream-size',
+        device:device,
+        width:width,
+        height:height,
+        toolbar:44
+      },parentOrigin);
+    }catch{}
+  }
 
   function showStatus(message,isError){
     status.textContent=message;
@@ -154,7 +193,7 @@ body{display:flex;align-items:center;justify-content:center}
         port:port,
         secure:secure,
         codec:'h264',
-        bitrate:8000000,
+        bitrate:10000000,
         maxSize:1080,
         maxFps:30,
         audio:false,
@@ -170,6 +209,8 @@ body{display:flex;align-items:center;justify-content:center}
           status.classList.add('hidden');
           status.classList.remove('error');
           focusKeyboard();
+          setTimeout(reportStreamSize,50);
+          setTimeout(reportStreamSize,350);
           console.info('[NuCel] stream conectado:',device);
         },
         onDisconnect:function(reason){
@@ -190,10 +231,11 @@ body{display:flex;align-items:center;justify-content:center}
 
   const watchdog=setInterval(function(){
     if(stopped||reconnectTimer)return;
+    reportStreamSize();
     if(handle&&!handle.isConnected&&Date.now()-connectStartedAt>20000){
       scheduleReconnect('conexão travada por mais de 20s');
     }
-  },5000);
+  },2000);
 
   window.addEventListener('online',function(){
     if(!stopped&&handle&&!handle.isConnected&&!reconnectTimer){

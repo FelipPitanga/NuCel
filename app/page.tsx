@@ -1,5 +1,5 @@
 'use client';
-import {useCallback,useEffect,useState} from 'react';
+import {useCallback,useEffect,useRef,useState} from 'react';
 import {Check,Copy,Loader2,LogOut,Monitor,Play,Plus,Server,ShieldCheck,Smartphone,Users,Wifi,WifiOff,X} from 'lucide-react';
 import {toast,Toaster} from 'sonner';
 
@@ -112,6 +112,8 @@ function Phone({d,c,close}:{d:Device;c:Connection;close:()=>void}){
     :'';
   const initial=(process.env.NEXT_PUBLIC_NUCEL_BRIDGE_V2_URL||localBridge||c.url).replace(/\/$/,'');
   const [engine,setEngine]=useState(initial);
+  const [playerHeight,setPlayerHeight]=useState(590);
+  const frameRef=useRef<HTMLIFrameElement>(null);
 
   useEffect(()=>{
     if(localBridge||process.env.NEXT_PUBLIC_NUCEL_BRIDGE_V2_URL)return;
@@ -126,6 +128,26 @@ function Phone({d,c,close}:{d:Device;c:Connection;close:()=>void}){
     return()=>{alive=false};
   },[c.id,localBridge]);
 
+  useEffect(()=>{
+    const onMessage=(event:MessageEvent)=>{
+      const frame=frameRef.current;
+      if(!frame||event.source!==frame.contentWindow)return;
+      try{
+        if(event.origin!==new URL(engine).origin)return;
+      }catch{return}
+      const msg=event.data as {type?:string;device?:string;width?:number;height?:number;toolbar?:number};
+      if(msg?.type!=='nucel:stream-size'||msg.device!==d.serial)return;
+      const w=Number(msg.width),h=Number(msg.height),toolbar=Number(msg.toolbar)||44;
+      if(!Number.isFinite(w)||!Number.isFinite(h)||w<100||h<100)return;
+      const frameWidth=frame.clientWidth||308;
+      const videoWidth=Math.max(180,frameWidth-toolbar);
+      const next=Math.round(videoWidth*(h/w));
+      setPlayerHeight(Math.max(460,Math.min(720,next)));
+    };
+    window.addEventListener('message',onMessage);
+    return()=>window.removeEventListener('message',onMessage);
+  },[engine,d.serial]);
+
   const src=`${engine}/nucel-direct.html?device=${encodeURIComponent(d.serial)}`;
 
   return <article className="screen screen-direct">
@@ -134,8 +156,9 @@ function Phone({d,c,close}:{d:Device;c:Connection;close:()=>void}){
       <div className="screen-name"><b>{d.name}</b><small>{d.model}</small></div>
       <button onClick={close} title="Fechar tela"><X/></button>
     </header>
-    <div className="display direct-display">
+    <div className="display direct-display" style={{height:playerHeight}}>
       <iframe
+        ref={frameRef}
         src={src}
         title={'Controle de '+d.name}
         allow="clipboard-read; clipboard-write; fullscreen"

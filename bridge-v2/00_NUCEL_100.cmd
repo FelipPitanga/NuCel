@@ -74,7 +74,11 @@ echo.
 set /p TUNNEL=<"%READY%"
 echo [OK] Tunnel: !TUNNEL!
 
-echo [5/6] Iniciando ENGINE na porta 8000...
+echo [5/7] Sincronizando URL do tunnel com o NuCel...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%BRIDGE%03_SYNC_BRIDGE.ps1" -Url "!TUNNEL!"
+if errorlevel 1 goto :fail
+
+echo [6/7] Iniciando ENGINE na porta 8000...
 if "%NUCEL_HIDDEN%"=="1" (
   wscript.exe "%BRIDGE%START_ENGINE_HIDDEN.vbs"
 ) else (
@@ -99,7 +103,7 @@ goto :wait_engine
 echo.
 echo [OK] ENGINE respondendo na porta 8000.
 
-echo [6/6] Finalizando inicializacao...
+echo [7/7] Finalizando inicializacao...
 if "%NUCEL_NO_BROWSER%"=="1" (
   echo [OK] Navegador nao sera aberto. Use: nucel open
 ) else (

@@ -118,15 +118,21 @@ try {
     Save-EngineConfig $hostName
     $utf8 = New-Object System.Text.UTF8Encoding($false)
     [IO.File]::WriteAllText($ReadyPath, $url, $utf8)
+
+    Write-Host '[sync] Sincronizando URL do tunnel com o NuCel...' -ForegroundColor DarkGray
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $BridgeDir '03_SYNC_BRIDGE.ps1') -Url $url -BridgeName 'PC Principal'
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Falha ao sincronizar a URL do tunnel com o painel NuCel.'
+    }
 } catch {
-    Write-Host ('[ERRO] Falha ao preparar tunnel: ' + $_.Exception.Message) -ForegroundColor Red
+    Write-Host ('[ERRO] Falha ao preparar/sincronizar tunnel: ' + $_.Exception.Message) -ForegroundColor Red
     try { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue } catch {}
     exit 1
 }
 
 Write-Host ''
 Write-Host '===============================================' -ForegroundColor Green
-Write-Host '[OK] TUNEL SINCRONIZADO AUTOMATICAMENTE' -ForegroundColor Green
+Write-Host '[OK] TUNEL + PAINEL SINCRONIZADOS AUTOMATICAMENTE' -ForegroundColor Green
 Write-Host $url -ForegroundColor Cyan
 Write-Host 'Config do ENGINE atualizado. O NuCel online fara a sincronizacao.' -ForegroundColor Green
 Write-Host 'NAO FECHE ESTA JANELA.' -ForegroundColor Yellow

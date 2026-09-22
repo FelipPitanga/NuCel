@@ -1,7 +1,11 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 set "NUCEL_HIDDEN=0"
-if /I "%~1"=="--hidden" set "NUCEL_HIDDEN=1"
+set "NUCEL_NO_BROWSER=0"
+for %%A in (%*) do (
+  if /I "%%~A"=="--hidden" set "NUCEL_HIDDEN=1"
+  if /I "%%~A"=="--no-browser" set "NUCEL_NO_BROWSER=1"
+)
 title NuCel - START LIMPO
 
 set "BRIDGE=%~dp0"
@@ -24,6 +28,7 @@ echo.
 cd /d "%ROOT%"
 
 echo [1/6] Atualizando codigo...
+git restore -- "bridge-v2/engine-config.json" >nul 2>nul
 git switch nucel-bridge-v2
 if errorlevel 1 goto :fail
 git pull origin nucel-bridge-v2
@@ -69,7 +74,11 @@ echo.
 set /p TUNNEL=<"%READY%"
 echo [OK] Tunnel: !TUNNEL!
 
-echo [5/6] Iniciando ENGINE na porta 8000...
+echo [5/7] Sincronizando URL do tunnel com o NuCel...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%BRIDGE%03_SYNC_BRIDGE.ps1" -Url "!TUNNEL!"
+if errorlevel 1 goto :fail
+
+echo [6/7] Iniciando ENGINE na porta 8000...
 if "%NUCEL_HIDDEN%"=="1" (
   wscript.exe "%BRIDGE%START_ENGINE_HIDDEN.vbs"
 ) else (
@@ -94,8 +103,12 @@ goto :wait_engine
 echo.
 echo [OK] ENGINE respondendo na porta 8000.
 
-echo [6/6] Abrindo NuCel online e sincronizando a conexao...
-start "" "https://nucel.nuvixgestao.workers.dev/?bridgeUrl=!TUNNEL!"
+echo [7/7] Finalizando inicializacao...
+if "%NUCEL_NO_BROWSER%"=="1" (
+  echo [OK] Navegador nao sera aberto. Use: nucel open
+) else (
+  start "" "https://nucel.nuvixgestao.workers.dev/?bridgeUrl=!TUNNEL!"
+)
 
 echo.
 echo ===============================================

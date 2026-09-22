@@ -1,5 +1,7 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
+set "NUCEL_HIDDEN=0"
+if /I "%~1"=="--hidden" set "NUCEL_HIDDEN=1"
 title NuCel - START LIMPO
 
 set "BRIDGE=%~dp0"
@@ -43,7 +45,11 @@ if not errorlevel 1 (
 )
 
 echo [4/6] Criando tunnel e sincronizando Supabase...
-start "2 - NUCEL TUNEL" powershell.exe -NoExit -ExecutionPolicy Bypass -File "%BRIDGE%02_TUNEL_AUTO.ps1"
+if "%NUCEL_HIDDEN%"=="1" (
+  wscript.exe "%BRIDGE%START_TUNNEL_HIDDEN.vbs"
+) else (
+  start "2 - NUCEL TUNEL" powershell.exe -NoExit -ExecutionPolicy Bypass -File "%BRIDGE%02_TUNEL_AUTO.ps1"
+)
 
 set /a COUNT=0
 :wait_tunnel
@@ -64,7 +70,11 @@ set /p TUNNEL=<"%READY%"
 echo [OK] Tunnel: !TUNNEL!
 
 echo [5/6] Iniciando ENGINE na porta 8000...
-start "1 - NUCEL ENGINE" cmd.exe /k "cd /d ""%BRIDGE%"" && 01_ENGINE_DIRETO.cmd"
+if "%NUCEL_HIDDEN%"=="1" (
+  wscript.exe "%BRIDGE%START_ENGINE_HIDDEN.vbs"
+) else (
+  start "1 - NUCEL ENGINE" cmd.exe /k "cd /d ""%BRIDGE%"" && 01_ENGINE_DIRETO.cmd"
+)
 
 set /a COUNT=0
 :wait_engine
@@ -110,5 +120,6 @@ echo ===============================================
 echo [ERRO] Inicializacao interrompida.
 echo ===============================================
 echo.
+if "%NUCEL_HIDDEN%"=="1" exit /b 1
 pause
 exit /b 1

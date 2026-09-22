@@ -110,7 +110,22 @@ function Phone({d,c,close}:{d:Device;c:Connection;close:()=>void}){
   const localBridge=typeof window!=='undefined'&&(window.location.hostname==='localhost'||window.location.hostname==='127.0.0.1')
     ?'http://localhost:8000'
     :'';
-  const engine=(process.env.NEXT_PUBLIC_NUCEL_BRIDGE_V2_URL||localBridge||c.url).replace(/\/$/,'');
+  const initial=(process.env.NEXT_PUBLIC_NUCEL_BRIDGE_V2_URL||localBridge||c.url).replace(/\/$/,'');
+  const [engine,setEngine]=useState(initial);
+
+  useEffect(()=>{
+    if(localBridge||process.env.NEXT_PUBLIC_NUCEL_BRIDGE_V2_URL)return;
+    let alive=true;
+    fetch('/api/nucel',{cache:'no-store'})
+      .then(r=>r.json())
+      .then((fresh:Data)=>{
+        const current=fresh.connections?.find(x=>x.id===c.id);
+        if(alive&&current?.url)setEngine(current.url.replace(/\/$/,''));
+      })
+      .catch(()=>{});
+    return()=>{alive=false};
+  },[c.id,localBridge]);
+
   const src=`${engine}/nucel-direct.html?device=${encodeURIComponent(d.serial)}`;
 
   return <article className="screen screen-direct">
